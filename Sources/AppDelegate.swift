@@ -1,0 +1,124 @@
+import Cocoa
+import Speech
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    var statusBarController: StatusBarController?
+    var speechManager: SpeechManager?
+    var eventMonitor: Any?
+    var localMonitor: Any?
+    var lastKeyRelease: Date = Date.distantPast
+    
+    let hotkeyOptions = ["fn", "option", "both"]
+    var currentHotkey: String {
+        get { UserDefaults.standard.string(forKey: "dictationHotkey") ?? "fn" }
+        set { UserDefaults.standard.set(newValue, forKey: "dictationHotkey") }
+    }
+    var currentEngine: String {
+        get { UserDefaults.standard.string(forKey: "dictationEngine") ?? "apple" }
+        set { UserDefaults.standard.set(newValue, forKey: "dictationEngine") }
+    }
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        speechManager = SpeechManager()
+        if let savedLocale = UserDefaults.standard.string(forKey: "dictationLocale") {
+            speechManager?.setLocale(savedLocale)
+        }
+        speechManager?.onTextRecognized = { [weak self] (text: String) in
+            self?.speechManager?.pasteText(text)
+        }
+
+        speechManager?.engineMode = currentEngine
+
+        statusBarController = StatusBarController(speechManager: speechManager!)
+        statusBarController?.onHotkeyChanged = { [weak self] (hotkey: String) in
+            self?.currentHotkey = hotkey
+        }
+        statusBarController?.onEngineChanged = { [weak self] (engine: String) in
+            self?.currentEngine = engine
+            self?.speechManager?.engineMode = engine
+            if engine != "apple" {
+                self?.speechManager?.preloadWhisperModel()
+            }
+        }
+        statusBarController?.onEnabledChanged = { [weak self] (enabled: Bool) in
+            if !enabled {
+                self?.speechManager?.stopRecording()
+                self?.statusBarController?.isRecording = false
+            }
+        }
+        statusBarController?.currentHotkey = currentHotkey
+        statusBarController?.currentEngine = currentEngine
+
+        speechManager?.checkAuthorization()
+        if currentEngine != "apple" {
+            speechManager?.preloadWhisperModel()
+        }
+
+        let trusted = AXIsProcessTrusted()
+        NSLog("[SimpleDictation] Accessibility trusted: %d", trusted)
+        if !trusted {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+            AXIsProcessTrustedWithOptions(options)
+        }
+
+        setupGlobalHotkeyMonitor()
+        setupLocalHotkeyMonitor()
+
+        NSApp.setActivationPolicy(.accessory)
+    }
+    
+    func setupGlobalHotkeyMonitor() {
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handleHotkeyEvent(event)
+        }
+    }
+    
+    func setupLocalHotkeyMonitor() {
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handleHotkeyEvent(event)
+            return event
+        }
+    }
+    
+    func handleHotkeyEvent(_ event: NSEvent) {
+        guard let speechManager = speechManager, let statusBarController = statusBarController else { return }
+        guard statusBarController.isEnabled else { return }
+        NSLog("[SimpleDictation] Hotkey event: fn=%d option=%d", event.modifierFlags.contains(.function), event.modifierFlags.contains(.option))
+
+        let hotkey = currentHotkey
+        let isFn = event.modifierFlags.contains(.function)
+        let isOption = event.modifierFlags.contains(.option)
+        
+        let isHotkeyActive: Bool
+        switch hotkey {
+        case "fn": isHotkeyActive = isFn
+        case "option": isHotkeyActive = isOption
+        case "both": isHotkeyActive = isFn || isOption
+        default: isHotkeyActive = isFn
+        }
+        
+        NSLog("[SimpleDictation] isHotkeyActive=%d isRecording=%d hotkey=%@", isHotkeyActive, speechManager.isRecording, hotkey)
+        if isHotkeyActive != speechManager.isRecording {
+            if isHotkeyActive {
+                NSLog("[SimpleDictation] Starting recording...")
+                speechManager.startRecording()
+                statusBarController.isRecording = speechManager.isRecording
+                NSLog("[SimpleDictation] After startRecording, isRecording=%d", speechManager.isRecording)
+            } else {
+                NSLog("[SimpleDictation] Stopping recording...")
+                lastKeyRelease = Date()
+                speechManager.stopRecording()
+                statusBarController.isRecording = false
+            }
+        }
+    }
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+}

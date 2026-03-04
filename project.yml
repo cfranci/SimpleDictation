@@ -1,0 +1,38 @@
+name: SimpleDictation
+options:
+  bundleIdPrefix: com.simpledictation
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+
+packages:
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit.git
+    from: "0.9.0"
+
+targets:
+  SimpleDictation:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+    dependencies:
+      - package: WhisperKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.simpledictation.app
+        PRODUCT_NAME: SimpleDictation
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "SimpleDictation needs microphone access for speech-to-text dictation."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "SimpleDictation needs speech recognition to convert your voice to text."
+        GENERATE_INFOPLIST_FILE: YES
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 1.0.0
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: YES
+        CODE_SIGNING_ALLOWED: YES
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+        ENABLE_HARDENED_RUNTIME: NO
+    entitlements:
+      path: SimpleDictation.entitlements
