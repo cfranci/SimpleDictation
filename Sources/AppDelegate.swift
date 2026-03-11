@@ -36,7 +36,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController?.onEngineChanged = { [weak self] (engine: String) in
             self?.currentEngine = engine
             self?.speechManager?.engineMode = engine
-            if engine != "apple" {
+            if engine.hasPrefix("moonshine-") {
+                self?.speechManager?.preloadMoonshineModel()
+            } else if engine != "apple" {
                 self?.speechManager?.preloadWhisperModel()
             }
         }
@@ -46,11 +48,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.statusBarController?.isRecording = false
             }
         }
+        statusBarController?.onStartRecording = { [weak self] in
+            guard let self = self, let sm = self.speechManager, let sbc = self.statusBarController else { return }
+            guard sbc.isEnabled else { return }
+            NSLog("[SimpleDictation] Mouse: starting recording")
+            sm.startRecording()
+            sbc.isRecording = sm.isRecording
+        }
+        statusBarController?.onStopRecording = { [weak self] in
+            guard let self = self, let sm = self.speechManager, let sbc = self.statusBarController else { return }
+            self.statusBarController?.debugLog("onStopRecording: text='\(sm.recognizedText)'")
+            self.lastKeyRelease = Date()
+            // Just stop recording — let the recognition callback handle paste
+            // via onTextRecognized, same code path as the working hotkey flow
+            sm.stopRecording()
+            sbc.isRecording = false
+        }
+        statusBarController?.onEnterPressed = { [weak self] in
+            NSLog("[SimpleDictation] Mouse: pressing Enter")
+            self?.speechManager?.pressEnter()
+        }
         statusBarController?.currentHotkey = currentHotkey
         statusBarController?.currentEngine = currentEngine
 
         speechManager?.checkAuthorization()
-        if currentEngine != "apple" {
+        if currentEngine.hasPrefix("moonshine-") {
+            speechManager?.preloadMoonshineModel()
+        } else if currentEngine != "apple" {
             speechManager?.preloadWhisperModel()
         }
 
@@ -100,6 +124,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[SimpleDictation] isHotkeyActive=%d isRecording=%d hotkey=%@", isHotkeyActive, speechManager.isRecording, hotkey)
         if isHotkeyActive != speechManager.isRecording {
             if isHotkeyActive {
+                // Double-tap detection: if last release was < 400ms ago, send Enter instead
+                if Date().timeIntervalSince(lastKeyRelease) < 0.4 {
+                    NSLog("[SimpleDictation] Double-tap detected, pressing Enter")
+                    speechManager.pressEnter()
+                    return
+                }
                 NSLog("[SimpleDictation] Starting recording...")
                 speechManager.startRecording()
                 statusBarController.isRecording = speechManager.isRecording

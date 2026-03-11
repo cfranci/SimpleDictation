@@ -12,7 +12,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     @Published var availableMics: [AudioDeviceInfo] = []
     @Published var selectedMicID: AudioDeviceID = 0
     @Published var currentLocale: String = "en-US"
-    @Published var engineMode: String = "apple" // "apple", "whisper-tiny", "whisper-base", "whisper-small", "whisper-medium"
+    @Published var engineMode: String = "apple" // "apple", "whisper-tiny", "whisper-base", "whisper-small", "whisper-medium", "distil-large-v3", "distil-large-v3-turbo", "moonshine-tiny", "moonshine-base"
 
     static let supportedLocales: [(id: String, name: String)] = [
         ("en-US", "English (US)"),
@@ -35,7 +35,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     var onTextRecognized: ((String) -> Void)?
 
-    private var hasPasted: Bool = false
+    var hasPasted: Bool = false
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
@@ -43,10 +43,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     // Whisper state
     let whisperManager = WhisperManager()
+    let moonshineManager = MoonshineManager()
     private var whisperSamples: [Float] = []
     private var whisperPastedCharCount: Int = 0  // chars currently on screen (including trailing space)
     private var isIncrementalTranscribing = false
     private var whisperTimer: Timer?
+    private var whisperSessionID: UInt64 = 0  // incremented each recording to discard stale results
 
     struct AudioDeviceInfo: Identifiable {
         let id: AudioDeviceID
@@ -159,9 +161,31 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         )
     }
 
+    private var isMoonshineEngine: Bool {
+        engineMode.hasPrefix("moonshine-")
+    }
+
+    private func slog(_ msg: String) {
+        NSLog("[SimpleDictation] %@", msg)
+        let line = "\(Date()): \(msg)\n"
+        let path = "/tmp/simpledictation.log"
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(line.data(using: .utf8)!)
+            handle.closeFile()
+        } else {
+            FileManager.default.createFile(atPath: path, contents: line.data(using: .utf8))
+        }
+    }
+
     // MARK: - Recording Dispatch
 
     func startRecording() {
+        slog("startRecording: engineMode=\(engineMode)")
+        if isMoonshineEngine {
+            startMoonshineRecording()
+            return
+        }
         if engineMode != "apple" {
             startWhisperRecording()
             return
@@ -278,6 +302,10 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     }
 
     func stopRecording() {
+        if isMoonshineEngine {
+            stopMoonshineRecording()
+            return
+        }
         if engineMode != "apple" {
             stopWhisperRecording()
             return
@@ -304,6 +332,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         case "whisper-base": return .base
         case "whisper-small": return .small
         case "whisper-medium": return .medium
+        case "distil-large-v3": return .distilLargeV3
+        case "distil-large-v3-turbo": return .distilLargeV3Turbo
         default: return .base
         }
     }
@@ -326,6 +356,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         whisperSamples = []
         whisperPastedCharCount = 0
         isIncrementalTranscribing = false
+        whisperSessionID &+= 1
 
         stopWhisperRecordingInternal()
 
@@ -430,12 +461,14 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         isIncrementalTranscribing = true
         let langCode = whisperLanguageCode
+        let sessionID = whisperSessionID
         Task {
             let text = await whisperManager.transcribe(samples: samples, language: langCode)
 
             await MainActor.run {
                 self.isIncrementalTranscribing = false
-                guard self.isRecording, !text.isEmpty else { return }
+                // Discard if this is from a stale session
+                guard self.whisperSessionID == sessionID, self.isRecording, !text.isEmpty else { return }
 
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Whisper incremental: %@", text)
@@ -496,6 +529,13 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
                 // Delete old incremental text and replace with final full transcription
                 self.deleteAndPaste(text)
+
+                // Put the full transcript in the clipboard so user can access it
+                usleep(100000)
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(text, forType: .string)
+                NSLog("[SimpleDictation] Full transcript placed in clipboard (%d chars)", text.count)
             }
         }
     }
@@ -507,6 +547,203 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine = nil
         isRecording = false
+    }
+
+    // MARK: - Moonshine Recording
+
+    private func moonshineModel(for mode: String) -> MoonshineManager.Model {
+        switch mode {
+        case "moonshine-tiny": return .tiny
+        default: return .tiny
+        }
+    }
+
+    func preloadMoonshineModel() {
+        let model = moonshineModel(for: engineMode)
+        NSLog("[SimpleDictation] Pre-loading Moonshine model: %@", model.rawValue)
+        Task {
+            let _ = await moonshineManager.loadModel(model)
+        }
+    }
+
+    private func startMoonshineRecording() {
+        hasPasted = false
+        recognizedText = ""
+        whisperSamples = []
+        whisperPastedCharCount = 0
+        isIncrementalTranscribing = false
+        whisperSessionID &+= 1
+
+        stopMoonshineRecordingInternal()
+
+        if selectedMicID != 0 {
+            setInputDevice(selectedMicID)
+        }
+
+        let model = moonshineModel(for: engineMode)
+
+        Task {
+            let loaded = await moonshineManager.loadModel(model)
+            guard loaded else {
+                NSLog("[SimpleDictation] Failed to load Moonshine model")
+                return
+            }
+            await MainActor.run {
+                self.startMoonshineAudioCapture()
+            }
+        }
+    }
+
+    private func startMoonshineAudioCapture() {
+        let engine = AVAudioEngine()
+        audioEngine = engine
+
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+        NSLog("[SimpleDictation] Moonshine input format: %@", inputFormat.description)
+
+        guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false) else {
+            NSLog("[SimpleDictation] Failed to create 16kHz format")
+            return
+        }
+
+        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+            NSLog("[SimpleDictation] Failed to create audio converter")
+            return
+        }
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+            guard let self = self else { return }
+
+            if let channelData = buffer.floatChannelData?[0] {
+                let frames = Int(buffer.frameLength)
+                let rms = sqrt((0..<frames).reduce(Float(0)) { $0 + channelData[$1] * channelData[$1] } / Float(frames))
+                let avgPower = 20 * log10(max(rms, 0.000001))
+                let normalized = max(0.0, (avgPower + 50) / 50.0)
+                DispatchQueue.main.async {
+                    self.audioLevel = normalized
+                }
+            }
+
+            let ratio = targetFormat.sampleRate / inputFormat.sampleRate
+            let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+            guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCount) else { return }
+
+            var error: NSError?
+            let status = converter.convert(to: outputBuffer, error: &error) { inNumPackets, outStatus in
+                outStatus.pointee = .haveData
+                return buffer
+            }
+
+            guard status != .error, error == nil else {
+                NSLog("[SimpleDictation] Audio conversion error: %@", error?.localizedDescription ?? "unknown")
+                return
+            }
+
+            if let floatData = outputBuffer.floatChannelData?[0] {
+                let count = Int(outputBuffer.frameLength)
+                let samples = Array(UnsafeBufferPointer(start: floatData, count: count))
+                DispatchQueue.main.async {
+                    self.whisperSamples.append(contentsOf: samples)
+                }
+            }
+        }
+
+        do {
+            engine.prepare()
+            try engine.start()
+            NSLog("[SimpleDictation] Moonshine audio engine started")
+        } catch {
+            NSLog("[SimpleDictation] Moonshine engine start failed: %@", error.localizedDescription)
+            audioEngine = nil
+            return
+        }
+
+        isRecording = true
+
+        // Incremental transcription every 5 seconds
+        whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.performMoonshineIncrementalTranscription()
+        }
+    }
+
+    private func performMoonshineIncrementalTranscription() {
+        guard !isIncrementalTranscribing else { return }
+        let samples = whisperSamples
+        guard samples.count > 16000 else { return }
+
+        isIncrementalTranscribing = true
+        let sessionID = whisperSessionID
+        Task {
+            let text = await moonshineManager.transcribe(samples: samples)
+
+            await MainActor.run {
+                self.isIncrementalTranscribing = false
+                guard self.whisperSessionID == sessionID, self.isRecording, !text.isEmpty else { return }
+
+                self.recognizedText = text
+                NSLog("[SimpleDictation] Moonshine incremental: %@", text)
+                self.deleteAndPaste(text)
+            }
+        }
+    }
+
+    private func stopMoonshineRecording() {
+        whisperTimer?.invalidate()
+        whisperTimer = nil
+
+        let hadEngine = audioEngine != nil
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine = nil
+        isRecording = false
+
+        guard hadEngine else { return }
+
+        let samples = whisperSamples
+        guard samples.count > 8000 else {
+            NSLog("[SimpleDictation] Moonshine: too few samples (%d) for transcription", samples.count)
+            return
+        }
+
+        NSLog("[SimpleDictation] Moonshine final transcription: %d samples (%.1fs)", samples.count, Float(samples.count) / 16000.0)
+
+        Task {
+            let text = await moonshineManager.transcribe(samples: samples)
+
+            await MainActor.run {
+                guard !text.isEmpty else { return }
+                self.recognizedText = text
+                NSLog("[SimpleDictation] Moonshine final: %@", text)
+
+                self.deleteAndPaste(text)
+
+                usleep(100000)
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(text, forType: .string)
+                NSLog("[SimpleDictation] Full transcript placed in clipboard (%d chars)", text.count)
+            }
+        }
+    }
+
+    private func stopMoonshineRecordingInternal() {
+        whisperTimer?.invalidate()
+        whisperTimer = nil
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine = nil
+        isRecording = false
+    }
+
+    // MARK: - Keypress Helpers
+
+    func pressEnter() {
+        let src = CGEventSource(stateID: .hidSystemState)
+        let down = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)
+        down?.post(tap: .cghidEventTap)
+        let up = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)
+        up?.post(tap: .cghidEventTap)
     }
 
     // MARK: - Paste

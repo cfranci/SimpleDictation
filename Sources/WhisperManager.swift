@@ -1,12 +1,27 @@
 import Foundation
 import WhisperKit
 
+private func debugLog(_ msg: String) {
+    NSLog("[SimpleDictation] %@", msg)
+    let line = "\(Date()): \(msg)\n"
+    let path = "/tmp/simpledictation.log"
+    if let handle = FileHandle(forWritingAtPath: path) {
+        handle.seekToEndOfFile()
+        handle.write(line.data(using: .utf8)!)
+        handle.closeFile()
+    } else {
+        FileManager.default.createFile(atPath: path, contents: line.data(using: .utf8))
+    }
+}
+
 class WhisperManager {
     enum Model: String, CaseIterable {
         case tiny = "whisper-tiny"
         case base = "whisper-base"
         case small = "whisper-small"
         case medium = "whisper-medium"
+        case distilLargeV3 = "distil-large-v3"
+        case distilLargeV3Turbo = "distil-large-v3-turbo"
 
         var whisperKitModel: String {
             switch self {
@@ -14,6 +29,8 @@ class WhisperManager {
             case .base: return "openai_whisper-base"
             case .small: return "openai_whisper-small"
             case .medium: return "openai_whisper-medium"
+            case .distilLargeV3: return "distil-whisper_distil-large-v3"
+            case .distilLargeV3Turbo: return "distil-whisper_distil-large-v3_turbo"
             }
         }
 
@@ -23,6 +40,8 @@ class WhisperManager {
             case .base: return "Whisper Base"
             case .small: return "Whisper Small"
             case .medium: return "Whisper Medium"
+            case .distilLargeV3: return "Distil-Whisper Large v3"
+            case .distilLargeV3Turbo: return "Distil-Whisper Large v3 Turbo"
             }
         }
     }
@@ -32,20 +51,20 @@ class WhisperManager {
 
     func loadModel(_ model: Model) async -> Bool {
         if loadedModel == model && whisperKit != nil {
-            NSLog("[SimpleDictation] WhisperKit model already loaded: %@", model.rawValue)
+            debugLog("WhisperKit model already loaded: \(model.rawValue)")
             return true
         }
 
-        NSLog("[SimpleDictation] Loading WhisperKit model: %@", model.whisperKitModel)
+        debugLog("Loading WhisperKit model: \(model.whisperKitModel)")
 
         do {
             let kit = try await WhisperKit(model: model.whisperKitModel)
             whisperKit = kit
             loadedModel = model
-            NSLog("[SimpleDictation] WhisperKit model loaded: %@", model.rawValue)
+            debugLog("WhisperKit model loaded successfully: \(model.rawValue)")
             return true
         } catch {
-            NSLog("[SimpleDictation] Failed to load WhisperKit model: %@", error.localizedDescription)
+            debugLog("Failed to load WhisperKit model '\(model.whisperKitModel)': \(error)")
             return false
         }
     }

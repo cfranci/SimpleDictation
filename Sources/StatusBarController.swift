@@ -14,6 +14,20 @@ class StatusBarController: NSObject {
     private var pulseTimer: Timer?
     private var pulseOpacity: CGFloat = 1.0
     private var pulseIncreasing: Bool = false
+    private var overlayWindow: NSWindow?
+
+    // Mouse interaction tracking
+    private var lastClickTime: Date = Date.distantPast
+    private var lastRightClickTime: Date = Date.distantPast
+    private var isMouseRecording: Bool = false
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
+    private var globalRightClickMonitor: Any?
+
+    // Callbacks for AppDelegate to wire up
+    var onStartRecording: (() -> Void)?
+    var onStopRecording: (() -> Void)?
+    var onEnterPressed: (() -> Void)?
 
     var onHotkeyChanged: ((String) -> Void)?
     var onEngineChanged: ((String) -> Void)?
@@ -85,13 +99,19 @@ class StatusBarController: NSObject {
         return image
     }
 
-    private func createRecordingImage(opacity: CGFloat) -> NSImage {
-        let size = NSSize(width: 36, height: 36)
+    private func createRecordingImage() -> NSImage {
+        let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size, flipped: false) { rect in
-            let color = NSColor.red.withAlphaComponent(opacity)
-            color.setFill()
-            let circlePath = NSBezierPath(ovalIn: rect.insetBy(dx: 4, dy: 4))
-            circlePath.fill()
+            let circleRect = rect.insetBy(dx: 3, dy: 3)
+            // White ring (same as idle icon)
+            NSColor.white.setStroke()
+            let ring = NSBezierPath(ovalIn: circleRect)
+            ring.lineWidth = 1.5
+            ring.stroke()
+            // Red filled center
+            let innerRect = circleRect.insetBy(dx: 2, dy: 2)
+            NSColor.red.setFill()
+            NSBezierPath(ovalIn: innerRect).fill()
             return true
         }
         image.isTemplate = false
@@ -104,7 +124,7 @@ class StatusBarController: NSObject {
                 button.image = createDashImage()
                 button.image?.isTemplate = true
             } else if isRecording {
-                button.image = createRecordingImage(opacity: pulseOpacity)
+                button.image = createRecordingImage()
             } else {
                 button.image = createCircleImage(filled: false)
                 button.image?.isTemplate = true
@@ -112,9 +132,12 @@ class StatusBarController: NSObject {
         }
     }
 
+    // MARK: - Pulsing overlay dot over macOS yellow mic indicator
+
     private func startPulseAnimation() {
         pulseOpacity = 1.0
         pulseIncreasing = false
+        showOverlayDot()
         pulseTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self, self.isRecording else { return }
             if self.pulseIncreasing {
@@ -125,20 +148,55 @@ class StatusBarController: NSObject {
                 }
             } else {
                 self.pulseOpacity -= 0.03
-                if self.pulseOpacity <= 0.4 {
-                    self.pulseOpacity = 0.4
+                if self.pulseOpacity <= 0.3 {
+                    self.pulseOpacity = 0.3
                     self.pulseIncreasing = true
                 }
             }
-            if let button = self.statusItem.button {
-                button.image = self.createRecordingImage(opacity: self.pulseOpacity)
-            }
+            self.overlayWindow?.alphaValue = self.pulseOpacity
         }
     }
 
     private func stopPulseAnimation() {
         pulseTimer?.invalidate()
         pulseTimer = nil
+        hideOverlayDot()
+    }
+
+    private func showOverlayDot() {
+        // Use the primary screen (has the menu bar)
+        guard let screen = NSScreen.screens.first else { return }
+        let screenFrame = screen.frame
+
+        // Eye shape centered on the top-right corner of the screen
+        // 30x30 canvas, the eye spans corner-to-corner diagonally
+        let size: CGFloat = 30
+
+        // Position so the top-right corner of the view aligns with the top-right of the screen
+        let x = screenFrame.maxX - size
+        let y = screenFrame.maxY - size
+
+        let frame = NSRect(x: x, y: y, width: size, height: size)
+
+        let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        window.hasShadow = false
+
+        let cornerView = CornerEyeView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        window.contentView = cornerView
+
+        window.alphaValue = pulseOpacity
+        window.orderFrontRegardless()
+        overlayWindow = window
+    }
+
+    private func hideOverlayDot() {
+        overlayWindow?.orderOut(nil)
+        overlayWindow = nil
     }
 
     private func createDashImage() -> NSImage {
@@ -249,6 +307,21 @@ class StatusBarController: NSObject {
         whisperMediumItem.tag = 605
         menu.addItem(whisperMediumItem)
 
+        let distilV3Item = NSMenuItem(title: "Distil-Whisper Large v3 (~594MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+        distilV3Item.target = self
+        distilV3Item.tag = 606
+        menu.addItem(distilV3Item)
+
+        let distilV3TurboItem = NSMenuItem(title: "Distil-Whisper Large v3 Turbo (~600MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+        distilV3TurboItem.target = self
+        distilV3TurboItem.tag = 607
+        menu.addItem(distilV3TurboItem)
+
+        let moonTinyItem = NSMenuItem(title: "Moonshine Tiny (bundled)", action: #selector(setEngine(_:)), keyEquivalent: "")
+        moonTinyItem.target = self
+        moonTinyItem.tag = 608
+        menu.addItem(moonTinyItem)
+
         menu.addItem(NSMenuItem.separator())
 
         let toggleItem = NSMenuItem(title: "Turn Off", action: #selector(toggleEnabled), keyEquivalent: "")
@@ -276,6 +349,10 @@ class StatusBarController: NSObject {
         
         menu.addItem(NSMenuItem.separator())
         
+        let restartItem = NSMenuItem(title: "Restart", action: #selector(restartApp), keyEquivalent: "r")
+        restartItem.target = self
+        menu.addItem(restartItem)
+
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -283,7 +360,8 @@ class StatusBarController: NSObject {
         updateHotkeyMenu()
         updateEngineMenu()
 
-        self.statusItem.menu = menu
+        // Don't assign menu to statusItem — we handle clicks manually
+        setupMouseHandling()
     }
     
     private func updateHotkeyMenu() {
@@ -383,6 +461,12 @@ class StatusBarController: NSObject {
             currentEngine = "whisper-small"
         case 605:
             currentEngine = "whisper-medium"
+        case 606:
+            currentEngine = "distil-large-v3"
+        case 607:
+            currentEngine = "distil-large-v3-turbo"
+        case 608:
+            currentEngine = "moonshine-tiny"
         default:
             break
         }
@@ -396,6 +480,9 @@ class StatusBarController: NSObject {
             (603, "whisper-base"),
             (604, "whisper-small"),
             (605, "whisper-medium"),
+            (606, "distil-large-v3"),
+            (607, "distil-large-v3-turbo"),
+            (608, "moonshine-tiny"),
         ]
         for entry in engineMap {
             if let item = menu.item(withTag: entry.tag) {
@@ -494,6 +581,15 @@ class StatusBarController: NSObject {
         speechManager.checkAuthorization()
     }
     
+    @objc private func restartApp() {
+        let bundlePath = Bundle.main.bundlePath
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 1 && open \"\(bundlePath)\""]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }
@@ -508,5 +604,151 @@ class StatusBarController: NSObject {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: - Debug Log
+
+    func debugLog(_ msg: String) {
+        let line = "\(Date()): \(msg)\n"
+        NSLog("[SimpleDictation] %@", msg)
+        let path = "/tmp/simpledictation.log"
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(line.data(using: .utf8)!)
+            handle.closeFile()
+        } else {
+            FileManager.default.createFile(atPath: path, contents: line.data(using: .utf8))
+        }
+    }
+
+    // MARK: - Mouse Handling
+
+    private func setupMouseHandling() {
+        guard let button = statusItem.button else { return }
+
+        // Use button action for left click — properly ends status bar tracking
+        button.action = #selector(statusBarButtonClicked(_:))
+        button.target = self
+
+        // Local monitor for right-click on status bar icon → show menu
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown]) { [weak self] event in
+            guard let self = self else { return event }
+            guard let btn = self.statusItem.button, event.window == btn.window else { return event }
+            self.debugLog("Right-click on status bar, showing menu")
+            self.menu.popUp(positioning: nil, at: NSPoint(x: 0, y: btn.bounds.height + 5), in: btn)
+            return nil
+        }
+
+        // Global monitor: left-click in other apps stops recording; right-click for double-right-click → Enter
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self = self else { return }
+
+            if event.type == .rightMouseDown {
+                let now = Date()
+                if now.timeIntervalSince(self.lastRightClickTime) < 0.4 {
+                    self.debugLog("Double right-click detected, pressing Enter")
+                    self.lastRightClickTime = Date.distantPast
+                    self.onEnterPressed?()
+                } else {
+                    self.lastRightClickTime = now
+                }
+                return
+            }
+
+            // Left mouse down
+            guard self.isMouseRecording else { return }
+            self.debugLog("Click outside detected, will stop recording in 0.5s")
+            self.isMouseRecording = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.debugLog("Firing onStopRecording")
+                self.onStopRecording?()
+            }
+        }
+
+        debugLog("Mouse handling setup complete")
+    }
+
+    @objc private func statusBarButtonClicked(_ sender: Any?) {
+        debugLog("statusBarButtonClicked fired")
+        handleStatusBarClick()
+    }
+
+    private func handleStatusBarClick() {
+        guard isEnabled else {
+            debugLog("handleStatusBarClick: not enabled")
+            return
+        }
+
+        if isMouseRecording {
+            debugLog("Status bar click: stopping recording")
+            isMouseRecording = false
+            onStopRecording?()
+
+            // Check for double-click → Enter
+            let now = Date()
+            if now.timeIntervalSince(lastClickTime) < 0.4 {
+                debugLog("Double-click detected, pressing Enter")
+                lastClickTime = Date.distantPast
+                onEnterPressed?()
+            } else {
+                lastClickTime = now
+            }
+        } else {
+            // Not recording → check double-click first, otherwise start recording
+            let now = Date()
+            if now.timeIntervalSince(lastClickTime) < 0.4 {
+                debugLog("Double-click detected, pressing Enter")
+                lastClickTime = Date.distantPast
+                onEnterPressed?()
+                return
+            }
+
+            debugLog("Status bar click: starting recording")
+            lastClickTime = now
+            isMouseRecording = true
+            onStartRecording?()
+        }
+    }
+
+    deinit {
+        if let monitor = globalMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = localMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+}
+
+// MARK: - Corner eye indicator view
+
+class CornerEyeView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        let w = bounds.width
+        let h = bounds.height
+
+        // Eye/almond shape rotated 90°: pinch points along the right edge and top edge
+        // Bulge curves outward from the screen corner (toward bottom-left of view)
+        let path = NSBezierPath()
+
+        // Start at bottom-right (pinch point, along right edge of screen)
+        path.move(to: NSPoint(x: w, y: 0))
+
+        // Curve to top-left (pinch point, along top edge of screen)
+        // This curve bulges toward (w, h) = the screen corner
+        path.curve(to: NSPoint(x: 0, y: h),
+                   controlPoint1: NSPoint(x: w, y: h * 0.7),
+                   controlPoint2: NSPoint(x: w * 0.7, y: h))
+
+        // Curve back to bottom-right
+        // This curve bulges toward (0, 0) = away from screen corner (outward)
+        path.curve(to: NSPoint(x: w, y: 0),
+                   controlPoint1: NSPoint(x: 0, y: h * 0.3),
+                   controlPoint2: NSPoint(x: w * 0.3, y: 0))
+
+        path.close()
+
+        NSColor.red.setFill()
+        path.fill()
     }
 }

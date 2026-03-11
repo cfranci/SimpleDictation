@@ -9,6 +9,9 @@ packages:
   WhisperKit:
     url: https://github.com/argmaxinc/WhisperKit.git
     from: "0.9.0"
+  Moonshine:
+    url: https://github.com/moonshine-ai/moonshine-swift.git
+    from: "0.0.49"
 
 targets:
   SimpleDictation:
@@ -18,6 +21,7 @@ targets:
       - Sources
     dependencies:
       - package: WhisperKit
+      - package: Moonshine
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.simpledictation.app
