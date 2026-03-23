@@ -49,6 +49,9 @@ class WhisperManager {
     private var whisperKit: WhisperKit?
     private(set) var loadedModel: Model?
 
+    /// Called when a model starts downloading/loading (true) and when done (false, success)
+    var onModelLoading: ((Bool, Model, Bool) -> Void)?
+
     func loadModel(_ model: Model) async -> Bool {
         if loadedModel == model && whisperKit != nil {
             debugLog("WhisperKit model already loaded: \(model.rawValue)")
@@ -56,17 +59,45 @@ class WhisperManager {
         }
 
         debugLog("Loading WhisperKit model: \(model.whisperKitModel)")
+        await MainActor.run { onModelLoading?(true, model, false) }
 
+        let startTime = CFAbsoluteTimeGetCurrent()
         do {
             let kit = try await WhisperKit(model: model.whisperKitModel)
             whisperKit = kit
             loadedModel = model
-            debugLog("WhisperKit model loaded successfully: \(model.rawValue)")
+            let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+            debugLog("WhisperKit model loaded successfully: \(model.rawValue) in \(String(format: "%.1f", elapsed))s")
+            await MainActor.run { onModelLoading?(false, model, true) }
             return true
         } catch {
             debugLog("Failed to load WhisperKit model '\(model.whisperKitModel)': \(error)")
+            await MainActor.run { onModelLoading?(false, model, false) }
             return false
         }
+    }
+
+    /// Check if a model is available locally (already downloaded).
+    /// WhisperKit uses ~/Library/Caches/ or the HF hub cache.
+    func isModelLocal(_ model: Model) -> Bool {
+        let fm = FileManager.default
+        // WhisperKit stores models under huggingface hub cache
+        let hubCache = NSHomeDirectory() + "/.cache/huggingface/hub"
+        let modelName = "models--argmaxinc--whisperkit-coreml"
+        let modelDir = hubCache + "/" + modelName
+        if fm.fileExists(atPath: modelDir) {
+            // Check for the specific model variant in snapshots
+            if let snapshots = try? fm.contentsOfDirectory(atPath: modelDir + "/snapshots") {
+                for snap in snapshots {
+                    let variantPath = modelDir + "/snapshots/" + snap + "/" + model.whisperKitModel
+                    if fm.fileExists(atPath: variantPath) {
+                        return true
+                    }
+                }
+            }
+        }
+        // Also check if it's the currently loaded model
+        return loadedModel == model && whisperKit != nil
     }
 
     func transcribe(samples: [Float], language: String? = nil) async -> String {

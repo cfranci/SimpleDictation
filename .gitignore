@@ -1,0 +1,8 @@
+.DS_Store
+build/
+SimpleDictation.app/
+SimpleDictation.xcodeproj/
+*.xcworkspace
+xcuserdata/
+DerivedData/
+.swiftpm/

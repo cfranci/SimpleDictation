@@ -31,6 +31,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechManager?.engineMode = currentEngine
 
+        // Model download/loading notifications
+        speechManager?.whisperManager.onModelLoading = { [weak self] (isLoading, model, success) in
+            guard let self = self else { return }
+            if isLoading {
+                self.showModelNotification("Downloading \(model.displayName)...")
+                self.statusBarController?.startDownloadFlash(forEngine: model.rawValue)
+            } else {
+                self.statusBarController?.stopDownloadFlash()
+                if success {
+                    self.showModelNotification("✓ \(model.displayName) ready", autoDismiss: true)
+                } else {
+                    self.showModelNotification("✗ \(model.displayName) failed", autoDismiss: true)
+                }
+            }
+        }
+
         statusBarController = StatusBarController(speechManager: speechManager!)
         statusBarController?.onHotkeyChanged = { [weak self] (hotkey: String) in
             self?.currentHotkey = hotkey
@@ -195,6 +211,67 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusBarController?.onClipboardCyclingChanged = { [weak self] enabled in
             self?.clipboardCycler?.enabled = enabled
+        }
+    }
+
+    // MARK: - Model download notification
+
+    private var notificationWindow: NSPanel?
+    private var notificationDismissTimer: Timer?
+
+    func showModelNotification(_ message: String, autoDismiss: Bool = false) {
+        notificationDismissTimer?.invalidate()
+
+        if let existing = notificationWindow {
+            // Update existing notification
+            if let label = existing.contentView?.subviews.first as? NSTextField {
+                label.stringValue = message
+            }
+        } else {
+            // Create floating notification near the mic window
+            let width: CGFloat = 220
+            let height: CGFloat = 36
+
+            let screen = NSScreen.main ?? NSScreen.screens.first!
+            let micFrame = floatingWindow?.frame ?? NSRect(x: screen.frame.maxX - 60, y: screen.frame.maxY - 80, width: 44, height: 58)
+            let x = micFrame.minX - width - 8
+            let y = micFrame.midY - height / 2
+
+            let panel = NSPanel(
+                contentRect: NSRect(x: x, y: y, width: width, height: height),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            panel.level = .floating
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = true
+            panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
+            panel.hidesOnDeactivate = false
+
+            let bg = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+            bg.wantsLayer = true
+            bg.layer?.backgroundColor = NSColor(white: 0.12, alpha: 0.92).cgColor
+            bg.layer?.cornerRadius = 10
+
+            let label = NSTextField(labelWithString: message)
+            label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+            label.textColor = .white
+            label.alignment = .center
+            label.frame = NSRect(x: 8, y: 0, width: width - 16, height: height)
+            bg.addSubview(label)
+
+            panel.contentView = bg
+            panel.orderFrontRegardless()
+            notificationWindow = panel
+        }
+
+        if autoDismiss {
+            notificationDismissTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+                self?.notificationWindow?.orderOut(nil)
+                self?.notificationWindow = nil
+            }
         }
     }
 

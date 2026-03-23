@@ -209,22 +209,21 @@ class MicPillView: NSView {
         let path = NSBezierPath(ovalIn: circleRect)
 
         if isRecording {
-            // Base red color with audio level affecting brightness
-            let level = min(max(audioLevel, 0), 1.0)
-            let alpha: CGFloat = 0.6 + 0.4 * level
-            NSColor(red: 0.9, green: 0.1, blue: 0.1, alpha: alpha).setFill()
+            // Bright solid red — unmistakable active state
+            NSColor(red: 1.0, green: 0.15, blue: 0.15, alpha: 1.0).setFill()
         } else {
             NSColor(white: 0.15, alpha: 0.85).setFill()
         }
         path.fill()
 
-        // Audio level ring when recording
-        if isRecording && audioLevel > 0.01 {
-            let ringWidth: CGFloat = 1.5 + 2.5 * min(max(audioLevel, 0), 1.0)
-            let ringRect = circleRect.insetBy(dx: -ringWidth / 2, dy: -ringWidth / 2)
+        // Pulsing glow ring when recording
+        if isRecording {
+            let level = min(max(audioLevel, 0), 1.0)
+            let ringWidth: CGFloat = 2.0 + 3.0 * level
+            let ringRect = circleRect.insetBy(dx: -ringWidth, dy: -ringWidth)
             let ringPath = NSBezierPath(ovalIn: ringRect)
             ringPath.lineWidth = ringWidth
-            NSColor(red: 1.0, green: 0.3, blue: 0.3, alpha: 0.5 + 0.5 * min(max(audioLevel, 0), 1.0)).setStroke()
+            NSColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 0.4 + 0.6 * level).setStroke()
             ringPath.stroke()
         }
 

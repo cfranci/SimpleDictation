@@ -880,10 +880,14 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     // MARK: - Keypress Helpers
 
     func pressEnter() {
-        let src = CGEventSource(stateID: .hidSystemState)
+        // Use privateState so modifiers (fn/option) held by the user
+        // don't turn this into Option+Return (newline) instead of Return (submit)
+        let src = CGEventSource(stateID: .privateState)
         let down = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: true)
+        down?.flags = []  // Clear all modifier flags
         down?.post(tap: .cghidEventTap)
         let up = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)
+        up?.flags = []
         up?.post(tap: .cghidEventTap)
     }
 
