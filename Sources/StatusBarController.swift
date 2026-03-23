@@ -3,13 +3,14 @@ import Combine
 
 class StatusBarController: NSObject {
     private var statusItem: NSStatusItem!
-    private var menu: NSMenu!
+    private(set) var menu: NSMenu!
     private var speechManager: SpeechManager
     private var cancellables = Set<AnyCancellable>()
-    private var clipboardHistory: [String] = []
+    var clipboardHistory: [String] = []
     private var clipboardTimer: Timer?
     private var lastChangeCount: Int = 0
-    private let maxHistory = 5
+    private let maxHistory = 10
+    var suppressClipboardMonitoring = false
     private let previewLength = 40
     private var pulseTimer: Timer?
     private var pulseOpacity: CGFloat = 1.0
@@ -73,12 +74,37 @@ class StatusBarController: NSObject {
     }
     
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        
-        if let button = statusItem.button {
-            button.image = createCircleImage(filled: false)
-            button.image?.isTemplate = true
+        // Remove any existing status item first
+        if let old = statusItem {
+            NSStatusBar.system.removeStatusItem(old)
         }
+
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.isVisible = true
+
+        if let button = statusItem.button {
+            button.title = "SD"
+            button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "SimpleDictation")
+            button.image?.isTemplate = true
+            button.imagePosition = .imageLeading
+            button.toolTip = "Simple Dictation"
+        }
+
+        NSLog("[SimpleDictation] Status item created, button=%@, frame=%@",
+              statusItem.button != nil ? "YES" : "NO",
+              statusItem.button?.window != nil ? "has window" : "NO window")
+    }
+
+    /// Force-recreate the status item (useful when macOS drops it from crowded menu bars)
+    func recreateStatusItem() {
+        NSLog("[SimpleDictation] Recreating status item")
+        setupStatusItem()
+        if let button = statusItem.button {
+            button.action = #selector(statusBarButtonClicked(_:))
+            button.target = self
+        }
+        updateStatusIcon()
+        setupMouseHandling()
     }
     
     private func createCircleImage(filled: Bool) -> NSImage {
@@ -121,12 +147,12 @@ class StatusBarController: NSObject {
     private func updateStatusIcon() {
         if let button = statusItem.button {
             if !isEnabled {
-                button.image = createDashImage()
+                button.image = NSImage(systemSymbolName: "minus.circle", accessibilityDescription: "Disabled")
                 button.image?.isTemplate = true
             } else if isRecording {
                 button.image = createRecordingImage()
             } else {
-                button.image = createCircleImage(filled: false)
+                button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "SimpleDictation")
                 button.image?.isTemplate = true
             }
         }
@@ -324,10 +350,26 @@ class StatusBarController: NSObject {
 
         menu.addItem(NSMenuItem.separator())
 
+        let incrementalItem = NSMenuItem(title: "Incremental Mode", action: #selector(toggleIncrementalMode), keyEquivalent: "")
+        incrementalItem.target = self
+        incrementalItem.tag = 700
+        incrementalItem.state = speechManager.incrementalMode ? .on : .off
+        menu.addItem(incrementalItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let toggleItem = NSMenuItem(title: "Turn Off", action: #selector(toggleEnabled), keyEquivalent: "")
         toggleItem.target = self
         toggleItem.tag = 200
         menu.addItem(toggleItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let cycleItem = NSMenuItem(title: "Clipboard Cycling (Cmd+V×2)", action: #selector(toggleClipboardCycling), keyEquivalent: "")
+        cycleItem.target = self
+        cycleItem.tag = 800
+        cycleItem.state = UserDefaults.standard.bool(forKey: "clipboardCyclingEnabled") ? .on : .off
+        menu.addItem(cycleItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -346,9 +388,13 @@ class StatusBarController: NSObject {
         let authItem = NSMenuItem(title: "Request Permissions...", action: #selector(requestPermissions), keyEquivalent: "")
         authItem.target = self
         menu.addItem(authItem)
-        
+
+        let resetBarItem = NSMenuItem(title: "Reset Menu Bar Icon", action: #selector(resetMenuBarIcon), keyEquivalent: "")
+        resetBarItem.target = self
+        menu.addItem(resetBarItem)
+
         menu.addItem(NSMenuItem.separator())
-        
+
         let restartItem = NSMenuItem(title: "Restart", action: #selector(restartApp), keyEquivalent: "r")
         restartItem.target = self
         menu.addItem(restartItem)
@@ -496,6 +542,16 @@ class StatusBarController: NSObject {
         onEnabledChanged?(isEnabled)
     }
 
+    var onIncrementalChanged: ((Bool) -> Void)?
+
+    @objc private func toggleIncrementalMode() {
+        speechManager.incrementalMode = !speechManager.incrementalMode
+        if let item = menu.item(withTag: 700) {
+            item.state = speechManager.incrementalMode ? .on : .off
+        }
+        onIncrementalChanged?(speechManager.incrementalMode)
+    }
+
     private func updateEnabledMenu() {
         if let item = menu.item(withTag: 200) {
             item.title = isEnabled ? "Turn Off" : "Turn On"
@@ -522,11 +578,17 @@ class StatusBarController: NSObject {
         }
     }
 
+    func syncClipboardChangeCount() {
+        lastChangeCount = NSPasteboard.general.changeCount
+    }
+
     private func checkClipboard() {
         let pb = NSPasteboard.general
         let current = pb.changeCount
         guard current != lastChangeCount else { return }
         lastChangeCount = current
+
+        guard !suppressClipboardMonitoring else { return }
 
         guard let text = pb.string(forType: .string), !text.isEmpty else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -551,7 +613,7 @@ class StatusBarController: NSObject {
         guard let headerIndex = menu.items.firstIndex(where: { $0.tag == 300 }) else { return }
 
         // Remove old clipboard items (tags 301-305)
-        menu.items.filter { $0.tag >= 301 && $0.tag <= 305 }.forEach { menu.removeItem($0) }
+        menu.items.filter { $0.tag >= 301 && $0.tag <= 310 }.forEach { menu.removeItem($0) }
 
         if clipboardHistory.isEmpty {
             let emptyItem = NSMenuItem(title: "  (empty)", action: nil, keyEquivalent: "")
@@ -579,6 +641,22 @@ class StatusBarController: NSObject {
 
     @objc private func requestPermissions() {
         speechManager.checkAuthorization()
+    }
+
+    @objc private func resetMenuBarIcon() {
+        recreateStatusItem()
+    }
+
+    var onClipboardCyclingChanged: ((Bool) -> Void)?
+
+    @objc private func toggleClipboardCycling() {
+        let current = UserDefaults.standard.bool(forKey: "clipboardCyclingEnabled")
+        let newValue = !current
+        UserDefaults.standard.set(newValue, forKey: "clipboardCyclingEnabled")
+        if let item = menu.item(withTag: 800) {
+            item.state = newValue ? .on : .off
+        }
+        onClipboardCyclingChanged?(newValue)
     }
     
     @objc private func restartApp() {

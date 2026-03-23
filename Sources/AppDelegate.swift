@@ -4,6 +4,8 @@ import Speech
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarController: StatusBarController?
     var speechManager: SpeechManager?
+    var floatingWindow: FloatingMicWindow?
+    var clipboardCycler: ClipboardCycler?
     var eventMonitor: Any?
     var localMonitor: Any?
     var lastKeyRelease: Date = Date.distantPast
@@ -36,6 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController?.onEngineChanged = { [weak self] (engine: String) in
             self?.currentEngine = engine
             self?.speechManager?.engineMode = engine
+            self?.floatingWindow?.updateEngineLabel(engine)
             if engine.hasPrefix("moonshine-") {
                 self?.speechManager?.preloadMoonshineModel()
             } else if engine != "apple" {
@@ -68,8 +71,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[SimpleDictation] Mouse: pressing Enter")
             self?.speechManager?.pressEnter()
         }
+        statusBarController?.onIncrementalChanged = { (enabled: Bool) in
+            UserDefaults.standard.set(enabled, forKey: "incrementalMode")
+        }
+        speechManager?.incrementalMode = UserDefaults.standard.bool(forKey: "incrementalMode")
         statusBarController?.currentHotkey = currentHotkey
         statusBarController?.currentEngine = currentEngine
+
+        // Floating mic window — always visible fallback for menu bar
+        floatingWindow = FloatingMicWindow(
+            speechManager: speechManager!,
+            onToggleRecording: { [weak self] in
+                guard let self = self, let sm = self.speechManager else { return }
+                if sm.isRecording {
+                    self.lastKeyRelease = Date()
+                    sm.stopRecording()
+                    self.statusBarController?.isRecording = false
+                    self.floatingWindow?.updateAppearance(recording: false)
+                } else {
+                    sm.startRecording()
+                    self.statusBarController?.isRecording = sm.isRecording
+                    self.floatingWindow?.updateAppearance(recording: sm.isRecording)
+                }
+            },
+            onEnterPressed: { [weak self] in
+                self?.speechManager?.pressEnter()
+            },
+            onRightClick: { [weak self] view in
+                guard let self = self, let menu = self.statusBarController?.menu else { return }
+                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height + 5), in: view)
+            }
+        )
 
         speechManager?.checkAuthorization()
         if currentEngine.hasPrefix("moonshine-") {
@@ -87,6 +119,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupGlobalHotkeyMonitor()
         setupLocalHotkeyMonitor()
+        setupClipboardCycler()
 
         NSApp.setActivationPolicy(.accessory)
     }
@@ -133,16 +166,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[SimpleDictation] Starting recording...")
                 speechManager.startRecording()
                 statusBarController.isRecording = speechManager.isRecording
+                floatingWindow?.updateAppearance(recording: speechManager.isRecording)
                 NSLog("[SimpleDictation] After startRecording, isRecording=%d", speechManager.isRecording)
             } else {
                 NSLog("[SimpleDictation] Stopping recording...")
                 lastKeyRelease = Date()
                 speechManager.stopRecording()
                 statusBarController.isRecording = false
+                floatingWindow?.updateAppearance(recording: false)
             }
         }
     }
     
+    func setupClipboardCycler() {
+        let cycler = ClipboardCycler()
+        cycler.getClipboardHistory = { [weak self] in
+            return self?.statusBarController?.clipboardHistory ?? []
+        }
+        cycler.onCyclingStateChanged = { [weak self] isCycling in
+            self?.statusBarController?.suppressClipboardMonitoring = isCycling
+            if !isCycling {
+                self?.statusBarController?.syncClipboardChangeCount()
+            }
+        }
+        cycler.enabled = UserDefaults.standard.bool(forKey: "clipboardCyclingEnabled")
+        cycler.start()
+        clipboardCycler = cycler
+
+        statusBarController?.onClipboardCyclingChanged = { [weak self] enabled in
+            self?.clipboardCycler?.enabled = enabled
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)

@@ -34,6 +34,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     ]
 
     var onTextRecognized: ((String) -> Void)?
+    var incrementalMode: Bool = false  // Off by default: accumulate all, paste on stop
 
     var hasPasted: Bool = false
     private var speechRecognizer: SFSpeechRecognizer?
@@ -49,6 +50,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     private var isIncrementalTranscribing = false
     private var whisperTimer: Timer?
     private var whisperSessionID: UInt64 = 0  // incremented each recording to discard stale results
+
+    // Guard against overlapping Apple recognition starts
+    private var pendingRecognitionStart: DispatchWorkItem?
+    private var appleUserRequestedStop: Bool = false
+    private var appleAccumulatedText: String = ""
 
     struct AudioDeviceInfo: Identifiable {
         let id: AudioDeviceID
@@ -197,11 +203,17 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             return
         }
 
+        // Cancel any pending delayed recognition start from a previous session
+        pendingRecognitionStart?.cancel()
+        pendingRecognitionStart = nil
+
         ensureRecognizer()
         hasPasted = false
         recognizedText = ""
+        appleUserRequestedStop = false
+        appleAccumulatedText = ""
 
-        stopAppleRecording()
+        stopAppleRecordingInternal()
 
         if selectedMicID != 0 {
             setInputDevice(selectedMicID)
@@ -266,39 +278,55 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         isRecording = true
 
         NSLog("[SimpleDictation] Waiting for audio to flow before starting recognition...")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.isRecording, let recognitionRequest = self.recognitionRequest else { return }
+            self.pendingRecognitionStart = nil
             NSLog("[SimpleDictation] Starting recognition task, supportsOnDevice: %d, buffers so far: %d", recognizer.supportsOnDeviceRecognition, bufferCount)
 
             self.recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
                 guard let self = self else { return }
-                var isFinal = false
 
                 if let result = result {
                     NSLog("[SimpleDictation] Got result: %@, isFinal: %d", result.bestTranscription.formattedString, result.isFinal)
                     self.recognizedText = result.bestTranscription.formattedString
-                    isFinal = result.isFinal
                 }
 
                 if let error = error {
                     NSLog("[SimpleDictation] Recognition error: %@", error.localizedDescription)
                 }
 
+                let isFinal = result?.isFinal ?? false
+
                 if error != nil || isFinal {
-                    self.audioEngine?.stop()
-                    self.audioEngine?.inputNode.removeTap(onBus: 0)
-                    self.audioEngine = nil
+                    // Apple SR auto-finalized or errored — but user may still be holding the key
+                    // Clean up old recognition task, keep the audio engine running
+                    self.recognitionRequest?.endAudio()
                     self.recognitionRequest = nil
                     self.recognitionTask = nil
-                    self.isRecording = false
 
-                    if !self.recognizedText.isEmpty && !self.hasPasted {
-                        self.hasPasted = true
-                        self.onTextRecognized?(self.recognizedText)
+                    if self.appleUserRequestedStop {
+                        // User explicitly released the key — stop everything and paste
+                        self.audioEngine?.stop()
+                        self.audioEngine?.inputNode.removeTap(onBus: 0)
+                        self.audioEngine = nil
+                        self.isRecording = false
+
+                        if !self.recognizedText.isEmpty && !self.hasPasted {
+                            self.hasPasted = true
+                            self.onTextRecognized?(self.recognizedText)
+                        }
+                    } else {
+                        // Auto-finalized — save accumulated text and restart recognition
+                        let accumulated = self.recognizedText
+                        NSLog("[SimpleDictation] Auto-finalized, restarting recognition. Accumulated: %@", accumulated)
+                        self.appleAccumulatedText = (self.appleAccumulatedText.isEmpty ? "" : self.appleAccumulatedText + " ") + accumulated
+                        self.restartAppleRecognition()
                     }
                 }
             }
         }
+        pendingRecognitionStart = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
     }
 
     func stopRecording() {
@@ -314,6 +342,35 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     }
 
     private func stopAppleRecording() {
+        appleUserRequestedStop = true
+        pendingRecognitionStart?.cancel()
+        pendingRecognitionStart = nil
+
+        // Signal end of audio — this triggers the recognition callback with isFinal
+        recognitionRequest?.endAudio()
+
+        // If there's no active recognition task (e.g. between restarts), clean up directly
+        if recognitionTask == nil {
+            audioEngine?.stop()
+            audioEngine?.inputNode.removeTap(onBus: 0)
+            audioEngine = nil
+            recognitionRequest = nil
+            isRecording = false
+
+            let fullText = appleAccumulatedText.isEmpty ? recognizedText :
+                (recognizedText.isEmpty ? appleAccumulatedText : appleAccumulatedText + " " + recognizedText)
+            if !fullText.isEmpty && !hasPasted {
+                hasPasted = true
+                recognizedText = fullText
+                onTextRecognized?(fullText)
+            }
+        }
+        // Otherwise the recognition callback will handle cleanup since appleUserRequestedStop is true
+    }
+
+    private func stopAppleRecordingInternal() {
+        pendingRecognitionStart?.cancel()
+        pendingRecognitionStart = nil
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine = nil
@@ -322,6 +379,73 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         recognitionTask?.cancel()
         recognitionTask = nil
         isRecording = false
+    }
+
+    /// Restart Apple recognition on the same audio engine after auto-finalization.
+    /// Key fix: keep the existing audio tap running and just swap the recognition request.
+    /// The tap always feeds `self.recognitionRequest?.append(buffer)`, so setting a new
+    /// request before starting the task means no audio buffers are lost during the gap.
+    private func restartAppleRecognition() {
+        guard isRecording, let engine = audioEngine, engine.isRunning else {
+            NSLog("[SimpleDictation] Cannot restart recognition — engine not running")
+            return
+        }
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            NSLog("[SimpleDictation] Cannot restart recognition — recognizer not available")
+            return
+        }
+
+        recognizedText = ""
+
+        // Create new request and set it BEFORE starting the task.
+        // The existing tap closure already does `self?.recognitionRequest?.append(buffer)`,
+        // so buffers immediately flow to the new request with no gap.
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        if #available(macOS 13.0, *) {
+            request.addsPunctuation = true
+        }
+        recognitionRequest = request
+
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self = self else { return }
+
+            if let result = result {
+                self.recognizedText = result.bestTranscription.formattedString
+            }
+            if let error = error {
+                NSLog("[SimpleDictation] Restart recognition error: %@", error.localizedDescription)
+            }
+
+            let isFinal = result?.isFinal ?? false
+            if error != nil || isFinal {
+                self.recognitionRequest?.endAudio()
+                self.recognitionRequest = nil
+                self.recognitionTask = nil
+
+                if self.appleUserRequestedStop {
+                    self.audioEngine?.stop()
+                    self.audioEngine?.inputNode.removeTap(onBus: 0)
+                    self.audioEngine = nil
+                    self.isRecording = false
+
+                    let fullText = self.appleAccumulatedText.isEmpty ? self.recognizedText :
+                        (self.recognizedText.isEmpty ? self.appleAccumulatedText : self.appleAccumulatedText + " " + self.recognizedText)
+                    if !fullText.isEmpty && !self.hasPasted {
+                        self.hasPasted = true
+                        self.recognizedText = fullText
+                        self.onTextRecognized?(fullText)
+                    }
+                } else {
+                    let accumulated = self.recognizedText
+                    NSLog("[SimpleDictation] Auto-finalized again, restarting. Accumulated: %@", accumulated)
+                    self.appleAccumulatedText = (self.appleAccumulatedText.isEmpty ? "" : self.appleAccumulatedText + " ") + accumulated
+                    self.restartAppleRecognition()
+                }
+            }
+        }
+
+        NSLog("[SimpleDictation] Recognition restarted seamlessly (tap kept running)")
     }
 
     // MARK: - Whisper Recording
@@ -448,9 +572,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         isRecording = true
 
-        // Incremental transcription every 5 seconds
-        whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.performIncrementalTranscription()
+        // Incremental transcription every 5 seconds (only when incremental mode is on)
+        if incrementalMode {
+            whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+                self?.performIncrementalTranscription()
+            }
         }
     }
 
@@ -519,6 +645,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         NSLog("[SimpleDictation] Whisper final transcription: %d samples (%.1fs)", samples.count, Float(samples.count) / 16000.0)
 
         let langCode = whisperLanguageCode
+        let wasIncremental = incrementalMode
+        let oldPastedCount = whisperPastedCharCount
         Task {
             let text = await whisperManager.transcribe(samples: samples, language: langCode)
 
@@ -527,8 +655,13 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Whisper final: %@", text)
 
-                // Delete old incremental text and replace with final full transcription
-                self.deleteAndPaste(text)
+                if wasIncremental && oldPastedCount > 0 {
+                    // Delete old incremental text and replace with final full transcription
+                    self.deleteAndPaste(text)
+                } else {
+                    // Standard mode: just paste everything at once
+                    self.pasteText(text)
+                }
 
                 // Put the full transcript in the clipboard so user can access it
                 usleep(100000)
@@ -661,9 +794,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         isRecording = true
 
-        // Incremental transcription every 5 seconds
-        whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.performMoonshineIncrementalTranscription()
+        // Incremental transcription every 5 seconds (only when incremental mode is on)
+        if incrementalMode {
+            whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+                self?.performMoonshineIncrementalTranscription()
+            }
         }
     }
 
@@ -708,6 +843,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         NSLog("[SimpleDictation] Moonshine final transcription: %d samples (%.1fs)", samples.count, Float(samples.count) / 16000.0)
 
+        let wasIncremental = incrementalMode
+        let oldPastedCount = whisperPastedCharCount
         Task {
             let text = await moonshineManager.transcribe(samples: samples)
 
@@ -716,7 +853,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Moonshine final: %@", text)
 
-                self.deleteAndPaste(text)
+                if wasIncremental && oldPastedCount > 0 {
+                    self.deleteAndPaste(text)
+                } else {
+                    self.pasteText(text)
+                }
 
                 usleep(100000)
                 let pb = NSPasteboard.general
