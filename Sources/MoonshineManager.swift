@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(MoonshineVoice)
 import MoonshineVoice
+#endif
 
 private func moonLog(_ msg: String) {
     NSLog("[SimpleDictation] %@", msg)
@@ -14,6 +16,7 @@ private func moonLog(_ msg: String) {
     }
 }
 
+@available(macOS 14, *)
 class MoonshineManager {
     enum Model: String, CaseIterable {
         case tiny = "moonshine-tiny"

@@ -313,40 +313,43 @@ class StatusBarController: NSObject {
         appleItem.tag = 601
         menu.addItem(appleItem)
 
-        let whisperTinyItem = NSMenuItem(title: "Whisper Tiny (~40MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-        whisperTinyItem.target = self
-        whisperTinyItem.tag = 602
-        menu.addItem(whisperTinyItem)
+        // Whisper & Moonshine engines — macOS 14+ only
+        if #available(macOS 14, *) {
+            let whisperTinyItem = NSMenuItem(title: "Whisper Tiny (~40MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+            whisperTinyItem.target = self
+            whisperTinyItem.tag = 602
+            menu.addItem(whisperTinyItem)
 
-        let whisperBaseItem = NSMenuItem(title: "Whisper Base (~140MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-        whisperBaseItem.target = self
-        whisperBaseItem.tag = 603
-        menu.addItem(whisperBaseItem)
+            let whisperBaseItem = NSMenuItem(title: "Whisper Base (~140MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+            whisperBaseItem.target = self
+            whisperBaseItem.tag = 603
+            menu.addItem(whisperBaseItem)
 
-        let whisperSmallItem = NSMenuItem(title: "Whisper Small (~460MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-        whisperSmallItem.target = self
-        whisperSmallItem.tag = 604
-        menu.addItem(whisperSmallItem)
+            let whisperSmallItem = NSMenuItem(title: "Whisper Small (~460MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+            whisperSmallItem.target = self
+            whisperSmallItem.tag = 604
+            menu.addItem(whisperSmallItem)
 
-        let whisperMediumItem = NSMenuItem(title: "Whisper Medium (~1.5GB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-        whisperMediumItem.target = self
-        whisperMediumItem.tag = 605
-        menu.addItem(whisperMediumItem)
+            let whisperMediumItem = NSMenuItem(title: "Whisper Medium (~1.5GB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+            whisperMediumItem.target = self
+            whisperMediumItem.tag = 605
+            menu.addItem(whisperMediumItem)
 
-        let distilV3Item = NSMenuItem(title: "Distil-Whisper Large v3 (~594MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-        distilV3Item.target = self
-        distilV3Item.tag = 606
-        menu.addItem(distilV3Item)
+            let distilV3Item = NSMenuItem(title: "Distil-Whisper Large v3 (~594MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+            distilV3Item.target = self
+            distilV3Item.tag = 606
+            menu.addItem(distilV3Item)
 
-        let distilV3TurboItem = NSMenuItem(title: "Distil-Whisper Large v3 Turbo (~600MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-        distilV3TurboItem.target = self
-        distilV3TurboItem.tag = 607
-        menu.addItem(distilV3TurboItem)
+            let distilV3TurboItem = NSMenuItem(title: "Distil-Whisper Large v3 Turbo (~600MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+            distilV3TurboItem.target = self
+            distilV3TurboItem.tag = 607
+            menu.addItem(distilV3TurboItem)
 
-        let moonTinyItem = NSMenuItem(title: "Moonshine Tiny (bundled)", action: #selector(setEngine(_:)), keyEquivalent: "")
-        moonTinyItem.target = self
-        moonTinyItem.tag = 608
-        menu.addItem(moonTinyItem)
+            let moonTinyItem = NSMenuItem(title: "Moonshine Tiny (bundled)", action: #selector(setEngine(_:)), keyEquivalent: "")
+            moonTinyItem.target = self
+            moonTinyItem.tag = 608
+            menu.addItem(moonTinyItem)
+        }
 
         menu.addItem(NSMenuItem.separator())
 

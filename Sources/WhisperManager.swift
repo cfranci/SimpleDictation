@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(WhisperKit)
 import WhisperKit
+#endif
 
 private func debugLog(_ msg: String) {
     NSLog("[SimpleDictation] %@", msg)
@@ -14,6 +16,7 @@ private func debugLog(_ msg: String) {
     }
 }
 
+@available(macOS 14, *)
 class WhisperManager {
     enum Model: String, CaseIterable {
         case tiny = "whisper-tiny"

@@ -42,9 +42,26 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     private var recognitionTask: SFSpeechRecognitionTask?
     private var audioEngine: AVAudioEngine?
 
-    // Whisper state
-    let whisperManager = WhisperManager()
-    let moonshineManager = MoonshineManager()
+    // Whisper state — only available on macOS 14+
+    private var _whisperManager: AnyObject?
+    private var _moonshineManager: AnyObject?
+
+    @available(macOS 14, *)
+    var whisperManager: WhisperManager {
+        if _whisperManager == nil { _whisperManager = WhisperManager() }
+        return _whisperManager as! WhisperManager
+    }
+
+    @available(macOS 14, *)
+    var moonshineManager: MoonshineManager {
+        if _moonshineManager == nil { _moonshineManager = MoonshineManager() }
+        return _moonshineManager as! MoonshineManager
+    }
+
+    var canUseWhisper: Bool {
+        if #available(macOS 14, *) { return true }
+        return false
+    }
     private var whisperSamples: [Float] = []
     private var whisperPastedCharCount: Int = 0  // chars currently on screen (including trailing space)
     private var isIncrementalTranscribing = false
@@ -188,13 +205,19 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     func startRecording() {
         slog("startRecording: engineMode=\(engineMode)")
-        if isMoonshineEngine {
-            startMoonshineRecording()
-            return
-        }
-        if engineMode != "apple" {
-            startWhisperRecording()
-            return
+        if #available(macOS 14, *) {
+            if isMoonshineEngine {
+                startMoonshineRecording()
+                return
+            }
+            if engineMode != "apple" {
+                startWhisperRecording()
+                return
+            }
+        } else if engineMode != "apple" {
+            // On older macOS, force Apple engine
+            slog("Whisper/Moonshine not available on this macOS, using Apple Speech")
+            engineMode = "apple"
         }
 
         guard isAuthorized else {
@@ -330,13 +353,15 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     }
 
     func stopRecording() {
-        if isMoonshineEngine {
-            stopMoonshineRecording()
-            return
-        }
-        if engineMode != "apple" {
-            stopWhisperRecording()
-            return
+        if #available(macOS 14, *) {
+            if isMoonshineEngine {
+                stopMoonshineRecording()
+                return
+            }
+            if engineMode != "apple" {
+                stopWhisperRecording()
+                return
+            }
         }
         stopAppleRecording()
     }
@@ -467,6 +492,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     }
 
     func preloadWhisperModel() {
+        guard #available(macOS 14, *) else { return }
         let model = whisperModel(for: engineMode)
         NSLog("[SimpleDictation] Pre-loading whisper model: %@", model.rawValue)
         Task {
@@ -692,6 +718,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     }
 
     func preloadMoonshineModel() {
+        guard #available(macOS 14, *) else { return }
         let model = moonshineModel(for: engineMode)
         NSLog("[SimpleDictation] Pre-loading Moonshine model: %@", model.rawValue)
         Task {

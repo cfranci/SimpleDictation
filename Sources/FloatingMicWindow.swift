@@ -212,7 +212,7 @@ class MicPillView: NSView {
             // Bright solid red — unmistakable active state
             NSColor(red: 1.0, green: 0.15, blue: 0.15, alpha: 1.0).setFill()
         } else {
-            NSColor(white: 0.15, alpha: 0.85).setFill()
+            NSColor(white: 0.15, alpha: 0.25).setFill()
         }
         path.fill()
 
@@ -235,8 +235,8 @@ class MicPillView: NSView {
             NSColor.white.setFill()
             NSColor.white.setStroke()
         } else {
-            NSColor(white: 0.75, alpha: 1.0).setFill()
-            NSColor(white: 0.75, alpha: 1.0).setStroke()
+            NSColor(white: 0.75, alpha: 0.25).setFill()
+            NSColor(white: 0.75, alpha: 0.25).setStroke()
         }
 
         // Mic body
@@ -276,7 +276,7 @@ class MicPillView: NSView {
         paragraphStyle.alignment = .center
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 9, weight: .medium),
-            .foregroundColor: NSColor(white: 0.85, alpha: 1.0),
+            .foregroundColor: NSColor(white: 0.85, alpha: isRecording ? 1.0 : 0.25),
             .paragraphStyle: paragraphStyle,
         ]
         (engineLabel as NSString).draw(in: labelRect, withAttributes: attrs)

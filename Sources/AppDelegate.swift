@@ -31,18 +31,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechManager?.engineMode = currentEngine
 
-        // Model download/loading notifications
-        speechManager?.whisperManager.onModelLoading = { [weak self] (isLoading, model, success) in
-            guard let self = self else { return }
-            if isLoading {
-                self.showModelNotification("Downloading \(model.displayName)...")
-                self.statusBarController?.startDownloadFlash(forEngine: model.rawValue)
-            } else {
-                self.statusBarController?.stopDownloadFlash()
-                if success {
-                    self.showModelNotification("✓ \(model.displayName) ready", autoDismiss: true)
+        // Model download/loading notifications (macOS 14+ only)
+        if #available(macOS 14, *) {
+            speechManager?.whisperManager.onModelLoading = { [weak self] (isLoading, model, success) in
+                guard let self = self else { return }
+                if isLoading {
+                    self.showModelNotification("Downloading \(model.displayName)...")
+                    self.statusBarController?.startDownloadFlash(forEngine: model.rawValue)
                 } else {
-                    self.showModelNotification("✗ \(model.displayName) failed", autoDismiss: true)
+                    self.statusBarController?.stopDownloadFlash()
+                    if success {
+                        self.showModelNotification("✓ \(model.displayName) ready", autoDismiss: true)
+                    } else {
+                        self.showModelNotification("✗ \(model.displayName) failed", autoDismiss: true)
+                    }
                 }
             }
         }
