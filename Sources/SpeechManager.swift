@@ -657,6 +657,10 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                 // Discard if this is from a stale session
                 guard self.whisperSessionID == sessionID, self.isRecording, !text.isEmpty else { return }
 
+                guard !self.isSilenceHallucination(text) else {
+                    NSLog("[SimpleDictation] Whisper incremental: suppressed hallucination '%@'", text)
+                    return
+                }
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Whisper incremental: %@", text)
 
@@ -885,6 +889,10 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                 self.isIncrementalTranscribing = false
                 guard self.whisperSessionID == sessionID, self.isRecording, !text.isEmpty else { return }
 
+                guard !self.isSilenceHallucination(text) else {
+                    NSLog("[SimpleDictation] Moonshine incremental: suppressed hallucination '%@'", text)
+                    return
+                }
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Moonshine incremental: %@", text)
                 self.deleteAndPaste(text)
