@@ -36,6 +36,27 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     var onTextRecognized: ((String) -> Void)?
     var incrementalMode: Bool = false  // Off by default: accumulate all, paste on stop
 
+    /// Timestamp when recording actually started (used for short-recording guard)
+    var recordingStartTime: Date?
+
+    /// Known silence hallucinations that speech engines produce when no one speaks
+    static let silenceHallucinations: Set<String> = [
+        "thank you", "thanks", "thanks.", "thank you.", "thanks for watching",
+        "thank you for watching", "bye", "bye.", "you", "you.", ".",
+    ]
+
+    /// Returns true if the transcript looks like a silence hallucination and should be suppressed
+    func isSilenceHallucination(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Empty/whitespace only
+        if trimmed.isEmpty { return true }
+        // Known hallucination phrases
+        if SpeechManager.silenceHallucinations.contains(trimmed.lowercased()) { return true }
+        // Recording was too short (< 400ms of actual speech)
+        if let start = recordingStartTime, Date().timeIntervalSince(start) < 0.4 { return true }
+        return false
+    }
+
     var hasPasted: Bool = false
     private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -233,6 +254,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         ensureRecognizer()
         hasPasted = false
         recognizedText = ""
+        recordingStartTime = Date()
         appleUserRequestedStop = false
         appleAccumulatedText = ""
 
@@ -335,8 +357,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                         self.isRecording = false
 
                         if !self.recognizedText.isEmpty && !self.hasPasted {
-                            self.hasPasted = true
-                            self.onTextRecognized?(self.recognizedText)
+                            if self.isSilenceHallucination(self.recognizedText) {
+                                NSLog("[SimpleDictation] Suppressed silence hallucination: '%@'", self.recognizedText)
+                            } else {
+                                self.hasPasted = true
+                                self.onTextRecognized?(self.recognizedText)
+                            }
                         }
                     } else {
                         // Auto-finalized — save accumulated text and restart recognition
@@ -385,9 +411,13 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             let fullText = appleAccumulatedText.isEmpty ? recognizedText :
                 (recognizedText.isEmpty ? appleAccumulatedText : appleAccumulatedText + " " + recognizedText)
             if !fullText.isEmpty && !hasPasted {
-                hasPasted = true
-                recognizedText = fullText
-                onTextRecognized?(fullText)
+                if isSilenceHallucination(fullText) {
+                    NSLog("[SimpleDictation] Suppressed silence hallucination: '%@'", fullText)
+                } else {
+                    hasPasted = true
+                    recognizedText = fullText
+                    onTextRecognized?(fullText)
+                }
             }
         }
         // Otherwise the recognition callback will handle cleanup since appleUserRequestedStop is true
@@ -457,9 +487,13 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                     let fullText = self.appleAccumulatedText.isEmpty ? self.recognizedText :
                         (self.recognizedText.isEmpty ? self.appleAccumulatedText : self.appleAccumulatedText + " " + self.recognizedText)
                     if !fullText.isEmpty && !self.hasPasted {
-                        self.hasPasted = true
-                        self.recognizedText = fullText
-                        self.onTextRecognized?(fullText)
+                        if self.isSilenceHallucination(fullText) {
+                            NSLog("[SimpleDictation] Suppressed silence hallucination: '%@'", fullText)
+                        } else {
+                            self.hasPasted = true
+                            self.recognizedText = fullText
+                            self.onTextRecognized?(fullText)
+                        }
                     }
                 } else {
                     let accumulated = self.recognizedText
@@ -503,6 +537,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     private func startWhisperRecording() {
         hasPasted = false
         recognizedText = ""
+        recordingStartTime = Date()
         whisperSamples = []
         whisperPastedCharCount = 0
         isIncrementalTranscribing = false
@@ -678,6 +713,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
             await MainActor.run {
                 guard !text.isEmpty else { return }
+
+                if self.isSilenceHallucination(text) {
+                    NSLog("[SimpleDictation] Whisper: suppressed silence hallucination: '%@'", text)
+                    return
+                }
+
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Whisper final: %@", text)
 
@@ -729,6 +770,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     private func startMoonshineRecording() {
         hasPasted = false
         recognizedText = ""
+        recordingStartTime = Date()
         whisperSamples = []
         whisperPastedCharCount = 0
         isIncrementalTranscribing = false
@@ -877,6 +919,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
             await MainActor.run {
                 guard !text.isEmpty else { return }
+
+                if self.isSilenceHallucination(text) {
+                    NSLog("[SimpleDictation] Moonshine: suppressed silence hallucination: '%@'", text)
+                    return
+                }
+
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Moonshine final: %@", text)
 

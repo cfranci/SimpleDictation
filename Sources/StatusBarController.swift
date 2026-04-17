@@ -30,9 +30,9 @@ class StatusBarController: NSObject {
     var onStopRecording: (() -> Void)?
     var onEnterPressed: (() -> Void)?
 
-    var onHotkeyChanged: ((String) -> Void)?
+    var onModifiersChanged: ((Set<String>) -> Void)?
     var onEngineChanged: ((String) -> Void)?
-    var currentHotkey: String = "fn" {
+    var enabledModifiers: Set<String> = ["fn", "option"] {
         didSet {
             updateHotkeyMenu()
         }
@@ -257,24 +257,33 @@ class StatusBarController: NSObject {
         
         menu.addItem(NSMenuItem.separator())
         
-        let hotkeyHeader = NSMenuItem(title: "Hotkey:", action: nil, keyEquivalent: "")
+        let hotkeyHeader = NSMenuItem(title: "Trigger Modifiers:", action: nil, keyEquivalent: "")
         hotkeyHeader.isEnabled = false
         menu.addItem(hotkeyHeader)
-        
-        let fnItem = NSMenuItem(title: "Fn", action: #selector(setHotkey(_:)), keyEquivalent: "")
+
+        let fnItem = NSMenuItem(title: "Fn", action: #selector(toggleModifier(_:)), keyEquivalent: "")
         fnItem.target = self
         fnItem.tag = 1
+        fnItem.representedObject = "fn" as NSString
         menu.addItem(fnItem)
-        
-        let optionItem = NSMenuItem(title: "Option", action: #selector(setHotkey(_:)), keyEquivalent: "")
+
+        let ctrlItem = NSMenuItem(title: "Control", action: #selector(toggleModifier(_:)), keyEquivalent: "")
+        ctrlItem.target = self
+        ctrlItem.tag = 2
+        ctrlItem.representedObject = "control" as NSString
+        menu.addItem(ctrlItem)
+
+        let optionItem = NSMenuItem(title: "Option", action: #selector(toggleModifier(_:)), keyEquivalent: "")
         optionItem.target = self
-        optionItem.tag = 2
+        optionItem.tag = 3
+        optionItem.representedObject = "option" as NSString
         menu.addItem(optionItem)
-        
-        let bothItem = NSMenuItem(title: "Fn or Option", action: #selector(setHotkey(_:)), keyEquivalent: "")
-        bothItem.target = self
-        bothItem.tag = 3
-        menu.addItem(bothItem)
+
+        let cmdItem = NSMenuItem(title: "Command", action: #selector(toggleModifier(_:)), keyEquivalent: "")
+        cmdItem.target = self
+        cmdItem.tag = 4
+        cmdItem.representedObject = "command" as NSString
+        menu.addItem(cmdItem)
         
         menu.addItem(NSMenuItem.separator())
 
@@ -414,29 +423,26 @@ class StatusBarController: NSObject {
     }
     
     private func updateHotkeyMenu() {
-        for item in menu.items {
-            if item.tag == 1 {  // Fn
-                item.state = currentHotkey == "fn" ? .on : .off
-            } else if item.tag == 2 {  // Option
-                item.state = currentHotkey == "option" ? .on : .off
-            } else if item.tag == 3 {  // Both
-                item.state = currentHotkey == "both" ? .on : .off
+        for item in menu.items where (1...4).contains(item.tag) {
+            if let key = item.representedObject as? String {
+                item.state = enabledModifiers.contains(key) ? .on : .off
             }
         }
     }
-    
-    @objc private func setHotkey(_ sender: NSMenuItem) {
-        switch sender.tag {
-        case 1:
-            currentHotkey = "fn"
-        case 2:
-            currentHotkey = "option"
-        case 3:
-            currentHotkey = "both"
-        default:
-            break
+
+    @objc private func toggleModifier(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        var mods = enabledModifiers
+        if mods.contains(key) {
+            // Don't allow disabling the last modifier
+            if mods.count > 1 {
+                mods.remove(key)
+            }
+        } else {
+            mods.insert(key)
         }
-        onHotkeyChanged?(currentHotkey)
+        enabledModifiers = mods
+        onModifiersChanged?(enabledModifiers)
     }
     
     func updateMicMenu() {

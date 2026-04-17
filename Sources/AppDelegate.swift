@@ -10,10 +10,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var localMonitor: Any?
     var lastKeyRelease: Date = Date.distantPast
     
-    let hotkeyOptions = ["fn", "option", "both"]
-    var currentHotkey: String {
-        get { UserDefaults.standard.string(forKey: "dictationHotkey") ?? "fn" }
-        set { UserDefaults.standard.set(newValue, forKey: "dictationHotkey") }
+    /// Set of enabled modifier keys. Any one triggers recording.
+    /// Stored in UserDefaults as an array of strings.
+    static let allModifierKeys = ["fn", "control", "option", "command"]
+    static let defaultEnabledModifiers: Set<String> = ["fn", "option"]
+
+    var enabledModifiers: Set<String> {
+        get {
+            if let saved = UserDefaults.standard.array(forKey: "enabledModifiers") as? [String] {
+                return Set(saved)
+            }
+            return AppDelegate.defaultEnabledModifiers
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: "enabledModifiers")
+        }
     }
     var currentEngine: String {
         get { UserDefaults.standard.string(forKey: "dictationEngine") ?? "apple" }
@@ -50,8 +61,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         statusBarController = StatusBarController(speechManager: speechManager!)
-        statusBarController?.onHotkeyChanged = { [weak self] (hotkey: String) in
-            self?.currentHotkey = hotkey
+        statusBarController?.onModifiersChanged = { [weak self] (modifiers: Set<String>) in
+            self?.enabledModifiers = modifiers
         }
         statusBarController?.onEngineChanged = { [weak self] (engine: String) in
             self?.currentEngine = engine
@@ -93,7 +104,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(enabled, forKey: "incrementalMode")
         }
         speechManager?.incrementalMode = UserDefaults.standard.bool(forKey: "incrementalMode")
-        statusBarController?.currentHotkey = currentHotkey
+        statusBarController?.enabledModifiers = enabledModifiers
         statusBarController?.currentEngine = currentEngine
 
         // Floating mic window — always visible fallback for menu bar
@@ -158,21 +169,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func handleHotkeyEvent(_ event: NSEvent) {
         guard let speechManager = speechManager, let statusBarController = statusBarController else { return }
         guard statusBarController.isEnabled else { return }
-        NSLog("[SimpleDictation] Hotkey event: fn=%d option=%d", event.modifierFlags.contains(.function), event.modifierFlags.contains(.option))
 
-        let hotkey = currentHotkey
-        let isFn = event.modifierFlags.contains(.function)
-        let isOption = event.modifierFlags.contains(.option)
-        
-        let isHotkeyActive: Bool
-        switch hotkey {
-        case "fn": isHotkeyActive = isFn
-        case "option": isHotkeyActive = isOption
-        case "both": isHotkeyActive = isFn || isOption
-        default: isHotkeyActive = isFn
-        }
-        
-        NSLog("[SimpleDictation] isHotkeyActive=%d isRecording=%d hotkey=%@", isHotkeyActive, speechManager.isRecording, hotkey)
+        let flags = event.modifierFlags
+        let modifiers = enabledModifiers
+
+        // Check if ANY enabled modifier is currently held
+        var isHotkeyActive = false
+        if modifiers.contains("fn") && flags.contains(.function) { isHotkeyActive = true }
+        if modifiers.contains("control") && flags.contains(.control) { isHotkeyActive = true }
+        if modifiers.contains("option") && flags.contains(.option) { isHotkeyActive = true }
+        if modifiers.contains("command") && flags.contains(.command) { isHotkeyActive = true }
+
+        NSLog("[SimpleDictation] isHotkeyActive=%d isRecording=%d modifiers=%@", isHotkeyActive, speechManager.isRecording, modifiers.joined(separator: ","))
         if isHotkeyActive != speechManager.isRecording {
             if isHotkeyActive {
                 // Double-tap detection: if last release was < 400ms ago, send Enter instead

@@ -30,7 +30,7 @@ targets:
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "SimpleDictation needs speech recognition to convert your voice to text."
         GENERATE_INFOPLIST_FILE: YES
         CURRENT_PROJECT_VERSION: 1
-        MARKETING_VERSION: 1.2.0
+        MARKETING_VERSION: 1.2.1
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         CODE_SIGN_IDENTITY: "-"
