@@ -60,6 +60,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        speechManager?.onFallbackToApple = { [weak self] modelName in
+            self?.showModelNotification("Using Apple Speech while \(modelName) downloads...")
+        }
+
+        speechManager?.onRecordingStateChanged = { [weak self] recording in
+            self?.statusBarController?.isRecording = recording
+            self?.floatingWindow?.updateAppearance(recording: recording)
+        }
+
         statusBarController = StatusBarController(speechManager: speechManager!)
         statusBarController?.onModifiersChanged = { [weak self] (modifiers: Set<String>) in
             self?.enabledModifiers = modifiers
@@ -106,10 +115,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         speechManager?.incrementalMode = UserDefaults.standard.bool(forKey: "incrementalMode")
         statusBarController?.enabledModifiers = enabledModifiers
         statusBarController?.currentEngine = currentEngine
+        statusBarController?.onSizeChanged = { [weak self] size in
+            self?.floatingWindow?.updateSize(size)
+        }
 
         // Floating mic window — always visible fallback for menu bar
+        let savedIconSize = CGFloat(UserDefaults.standard.object(forKey: "floatingMicSize") as? Int ?? 40)
         floatingWindow = FloatingMicWindow(
             speechManager: speechManager!,
+            circleSize: savedIconSize,
             onToggleRecording: { [weak self] in
                 guard let self = self, let sm = self.speechManager else { return }
                 if sm.isRecording {

@@ -25,6 +25,8 @@ class WhisperManager {
         case medium = "whisper-medium"
         case distilLargeV3 = "distil-large-v3"
         case distilLargeV3Turbo = "distil-large-v3-turbo"
+        case largev3Turbo = "whisper-large-v3-turbo"
+        case largev3TurboCompressed = "whisper-large-v3-turbo-632"
 
         var whisperKitModel: String {
             switch self {
@@ -34,6 +36,8 @@ class WhisperManager {
             case .medium: return "openai_whisper-medium"
             case .distilLargeV3: return "distil-whisper_distil-large-v3"
             case .distilLargeV3Turbo: return "distil-whisper_distil-large-v3_turbo"
+            case .largev3Turbo: return "openai_whisper-large-v3-v20240930_turbo"
+            case .largev3TurboCompressed: return "openai_whisper-large-v3-v20240930_turbo_632MB"
             }
         }
 
@@ -45,6 +49,8 @@ class WhisperManager {
             case .medium: return "Whisper Medium"
             case .distilLargeV3: return "Distil-Whisper Large v3"
             case .distilLargeV3Turbo: return "Distil-Whisper Large v3 Turbo"
+            case .largev3Turbo: return "Whisper Large v3 Turbo"
+            case .largev3TurboCompressed: return "Whisper Large v3 Turbo (632MB)"
             }
         }
     }

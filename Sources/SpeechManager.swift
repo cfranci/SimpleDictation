@@ -7,12 +7,14 @@ import CoreAudio
 class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     @Published var recognizedText: String = ""
     @Published var audioLevel: Float = 0.0
-    @Published var isRecording: Bool = false
+    @Published var isRecording: Bool = false {
+        didSet { onRecordingStateChanged?(isRecording) }
+    }
     @Published var isAuthorized: Bool = false
     @Published var availableMics: [AudioDeviceInfo] = []
     @Published var selectedMicID: AudioDeviceID = 0
     @Published var currentLocale: String = "en-US"
-    @Published var engineMode: String = "apple" // "apple", "whisper-tiny", "whisper-base", "whisper-small", "whisper-medium", "distil-large-v3", "distil-large-v3-turbo", "moonshine-tiny", "moonshine-base"
+    @Published var engineMode: String = "apple" // "apple", "whisper-tiny", "whisper-base", "whisper-small", "whisper-medium", "distil-large-v3", "distil-large-v3-turbo", "whisper-large-v3-turbo", "whisper-large-v3-turbo-632", "moonshine-tiny"
 
     static let supportedLocales: [(id: String, name: String)] = [
         ("en-US", "English (US)"),
@@ -34,6 +36,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     ]
 
     var onTextRecognized: ((String) -> Void)?
+    var onFallbackToApple: ((String) -> Void)?
+    var onRecordingStateChanged: ((Bool) -> Void)?
     var incrementalMode: Bool = false  // Off by default: accumulate all, paste on stop
 
     /// Timestamp when recording actually started (used for short-recording guard)
@@ -93,6 +97,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     private var pendingRecognitionStart: DispatchWorkItem?
     private var appleUserRequestedStop: Bool = false
     private var appleAccumulatedText: String = ""
+    private var usingAppleFallback: Bool = false
 
     struct AudioDeviceInfo: Identifiable {
         let id: AudioDeviceID
@@ -232,15 +237,27 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                 return
             }
             if engineMode != "apple" {
-                startWhisperRecording()
+                let model = whisperModel(for: engineMode)
+                if whisperManager.isModelLocal(model) || whisperManager.loadedModel == model {
+                    startWhisperRecording()
+                    return
+                }
+                // Model not ready, fall back to Apple while downloading
+                slog("Whisper model \(model.rawValue) not ready, using Apple Speech as fallback")
+                usingAppleFallback = true
+                onFallbackToApple?(model.displayName)
+                Task { let _ = await whisperManager.loadModel(model) }
+                startAppleRecording()
                 return
             }
         } else if engineMode != "apple" {
-            // On older macOS, force Apple engine
             slog("Whisper/Moonshine not available on this macOS, using Apple Speech")
             engineMode = "apple"
         }
+        startAppleRecording()
+    }
 
+    private func startAppleRecording() {
         guard isAuthorized else {
             NSLog("[SimpleDictation] Not authorized, requesting auth")
             checkAuthorization()
@@ -385,6 +402,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                 return
             }
             if engineMode != "apple" {
+                if usingAppleFallback {
+                    usingAppleFallback = false
+                    stopAppleRecording()
+                    return
+                }
                 stopWhisperRecording()
                 return
             }
@@ -517,6 +539,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         case "whisper-medium": return .medium
         case "distil-large-v3": return .distilLargeV3
         case "distil-large-v3-turbo": return .distilLargeV3Turbo
+        case "whisper-large-v3-turbo": return .largev3Turbo
+        case "whisper-large-v3-turbo-632": return .largev3TurboCompressed
         default: return .base
         }
     }

@@ -12,10 +12,6 @@ class StatusBarController: NSObject {
     private let maxHistory = 10
     var suppressClipboardMonitoring = false
     private let previewLength = 40
-    private var pulseTimer: Timer?
-    private var pulseOpacity: CGFloat = 1.0
-    private var pulseIncreasing: Bool = false
-    private var overlayWindow: NSWindow?
 
     // Mouse interaction tracking
     private var lastClickTime: Date = Date.distantPast
@@ -56,11 +52,6 @@ class StatusBarController: NSObject {
     var isRecording: Bool = false {
         didSet {
             updateStatusIcon()
-            if isRecording {
-                startPulseAnimation()
-            } else {
-                stopPulseAnimation()
-            }
         }
     }
     
@@ -79,14 +70,14 @@ class StatusBarController: NSObject {
             NSStatusBar.system.removeStatusItem(old)
         }
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.isVisible = true
 
         if let button = statusItem.button {
-            button.title = "SD"
+            button.title = ""
             button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "SimpleDictation")
             button.image?.isTemplate = true
-            button.imagePosition = .imageLeading
+            button.imagePosition = .imageOnly
             button.toolTip = "Simple Dictation"
         }
 
@@ -126,22 +117,13 @@ class StatusBarController: NSObject {
     }
 
     private func createRecordingImage() -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size, flipped: false) { rect in
-            let circleRect = rect.insetBy(dx: 3, dy: 3)
-            // White ring (same as idle icon)
-            NSColor.white.setStroke()
-            let ring = NSBezierPath(ovalIn: circleRect)
-            ring.lineWidth = 1.5
-            ring.stroke()
-            // Red filled center
-            let innerRect = circleRect.insetBy(dx: 2, dy: 2)
-            NSColor.red.setFill()
-            NSBezierPath(ovalIn: innerRect).fill()
-            return true
+        guard let symbol = NSImage(systemSymbolName: "mic.circle.fill", accessibilityDescription: "Recording") else {
+            return NSImage()
         }
-        image.isTemplate = false
-        return image
+        let config = NSImage.SymbolConfiguration(hierarchicalColor: NSColor.red.withAlphaComponent(0.15))
+        let result = symbol.withSymbolConfiguration(config) ?? symbol
+        result.isTemplate = false
+        return result
     }
 
     private func updateStatusIcon() {
@@ -156,73 +138,6 @@ class StatusBarController: NSObject {
                 button.image?.isTemplate = true
             }
         }
-    }
-
-    // MARK: - Pulsing overlay dot over macOS yellow mic indicator
-
-    private func startPulseAnimation() {
-        pulseOpacity = 1.0
-        pulseIncreasing = false
-        showOverlayDot()
-        pulseTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self = self, self.isRecording else { return }
-            if self.pulseIncreasing {
-                self.pulseOpacity += 0.03
-                if self.pulseOpacity >= 1.0 {
-                    self.pulseOpacity = 1.0
-                    self.pulseIncreasing = false
-                }
-            } else {
-                self.pulseOpacity -= 0.03
-                if self.pulseOpacity <= 0.3 {
-                    self.pulseOpacity = 0.3
-                    self.pulseIncreasing = true
-                }
-            }
-            self.overlayWindow?.alphaValue = self.pulseOpacity
-        }
-    }
-
-    private func stopPulseAnimation() {
-        pulseTimer?.invalidate()
-        pulseTimer = nil
-        hideOverlayDot()
-    }
-
-    private func showOverlayDot() {
-        // Use the primary screen (has the menu bar)
-        guard let screen = NSScreen.screens.first else { return }
-        let screenFrame = screen.frame
-
-        // Eye shape centered on the top-right corner of the screen
-        // 30x30 canvas, the eye spans corner-to-corner diagonally
-        let size: CGFloat = 30
-
-        // Position so the top-right corner of the view aligns with the top-right of the screen
-        let x = screenFrame.maxX - size
-        let y = screenFrame.maxY - size
-
-        let frame = NSRect(x: x, y: y, width: size, height: size)
-
-        let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.maximumWindow)))
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        window.hasShadow = false
-
-        let cornerView = CornerEyeView(frame: NSRect(x: 0, y: 0, width: size, height: size))
-        window.contentView = cornerView
-
-        window.alphaValue = pulseOpacity
-        window.orderFrontRegardless()
-        overlayWindow = window
-    }
-
-    private func hideOverlayDot() {
-        overlayWindow?.orderOut(nil)
-        overlayWindow = nil
     }
 
     private func createDashImage() -> NSImage {
@@ -354,6 +269,16 @@ class StatusBarController: NSObject {
             distilV3TurboItem.tag = 607
             menu.addItem(distilV3TurboItem)
 
+            let largev3TurboItem = NSMenuItem(title: "Whisper Large v3 Turbo", action: #selector(setEngine(_:)), keyEquivalent: "")
+            largev3TurboItem.target = self
+            largev3TurboItem.tag = 609
+            menu.addItem(largev3TurboItem)
+
+            let largev3TurboCompItem = NSMenuItem(title: "Whisper Large v3 Turbo (632MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
+            largev3TurboCompItem.target = self
+            largev3TurboCompItem.tag = 610
+            menu.addItem(largev3TurboCompItem)
+
             let moonTinyItem = NSMenuItem(title: "Moonshine Tiny (bundled)", action: #selector(setEngine(_:)), keyEquivalent: "")
             moonTinyItem.target = self
             moonTinyItem.tag = 608
@@ -367,6 +292,20 @@ class StatusBarController: NSObject {
         incrementalItem.tag = 700
         incrementalItem.state = speechManager.incrementalMode ? .on : .off
         menu.addItem(incrementalItem)
+
+        let sizeSubmenu = NSMenu()
+        let savedSize = UserDefaults.standard.object(forKey: "floatingMicSize") as? Int ?? 40
+        for size in stride(from: 10, through: 50, by: 10) {
+            let item = NSMenuItem(title: "\(size)px", action: #selector(setIconSize(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = size as NSNumber
+            item.state = size == savedSize ? .on : .off
+            sizeSubmenu.addItem(item)
+        }
+        let sizeItem = NSMenuItem(title: "Icon Size: \(savedSize)px", action: nil, keyEquivalent: "")
+        sizeItem.tag = 899
+        sizeItem.submenu = sizeSubmenu
+        menu.addItem(sizeItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -522,6 +461,10 @@ class StatusBarController: NSObject {
             currentEngine = "distil-large-v3-turbo"
         case 608:
             currentEngine = "moonshine-tiny"
+        case 609:
+            currentEngine = "whisper-large-v3-turbo"
+        case 610:
+            currentEngine = "whisper-large-v3-turbo-632"
         default:
             break
         }
@@ -541,6 +484,8 @@ class StatusBarController: NSObject {
             (605, "whisper-medium", .medium),
             (606, "distil-large-v3", .distilLargeV3),
             (607, "distil-large-v3-turbo", .distilLargeV3Turbo),
+            (609, "whisper-large-v3-turbo", .largev3Turbo),
+            (610, "whisper-large-v3-turbo-632", .largev3TurboCompressed),
             (608, "moonshine-tiny", nil),  // bundled
         ]
         for entry in engineMap {
@@ -568,6 +513,7 @@ class StatusBarController: NSObject {
         let tagMap: [String: Int] = [
             "whisper-tiny": 602, "whisper-base": 603, "whisper-small": 604,
             "whisper-medium": 605, "distil-large-v3": 606, "distil-large-v3-turbo": 607,
+            "whisper-large-v3-turbo": 609, "whisper-large-v3-turbo-632": 610,
         ]
         guard let tag = tagMap[mode] else { return }
         flashingTag = tag
@@ -599,6 +545,7 @@ class StatusBarController: NSObject {
     }
 
     var onIncrementalChanged: ((Bool) -> Void)?
+    var onSizeChanged: ((CGFloat) -> Void)?
 
     @objc private func toggleIncrementalMode() {
         speechManager.incrementalMode = !speechManager.incrementalMode
@@ -606,6 +553,20 @@ class StatusBarController: NSObject {
             item.state = speechManager.incrementalMode ? .on : .off
         }
         onIncrementalChanged?(speechManager.incrementalMode)
+    }
+
+    @objc private func setIconSize(_ sender: NSMenuItem) {
+        guard let size = sender.representedObject as? NSNumber else { return }
+        UserDefaults.standard.set(size.intValue, forKey: "floatingMicSize")
+        if let sizeItem = menu.item(withTag: 899), let submenu = sizeItem.submenu {
+            for item in submenu.items {
+                if let s = item.representedObject as? NSNumber {
+                    item.state = s.intValue == size.intValue ? .on : .off
+                }
+            }
+            sizeItem.title = "Icon Size: \(size.intValue)px"
+        }
+        onSizeChanged?(CGFloat(size.intValue))
     }
 
     private func updateEnabledMenu() {
@@ -851,38 +812,5 @@ class StatusBarController: NSObject {
         if let monitor = localMouseMonitor {
             NSEvent.removeMonitor(monitor)
         }
-    }
-}
-
-// MARK: - Corner eye indicator view
-
-class CornerEyeView: NSView {
-    override func draw(_ dirtyRect: NSRect) {
-        let w = bounds.width
-        let h = bounds.height
-
-        // Eye/almond shape rotated 90°: pinch points along the right edge and top edge
-        // Bulge curves outward from the screen corner (toward bottom-left of view)
-        let path = NSBezierPath()
-
-        // Start at bottom-right (pinch point, along right edge of screen)
-        path.move(to: NSPoint(x: w, y: 0))
-
-        // Curve to top-left (pinch point, along top edge of screen)
-        // This curve bulges toward (w, h) = the screen corner
-        path.curve(to: NSPoint(x: 0, y: h),
-                   controlPoint1: NSPoint(x: w, y: h * 0.7),
-                   controlPoint2: NSPoint(x: w * 0.7, y: h))
-
-        // Curve back to bottom-right
-        // This curve bulges toward (0, 0) = away from screen corner (outward)
-        path.curve(to: NSPoint(x: w, y: 0),
-                   controlPoint1: NSPoint(x: 0, y: h * 0.3),
-                   controlPoint2: NSPoint(x: w * 0.3, y: 0))
-
-        path.close()
-
-        NSColor.red.setFill()
-        path.fill()
     }
 }

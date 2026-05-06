@@ -2,6 +2,12 @@
 
 A macOS menu bar app that turns your voice into text. Hold a key, talk, release, and the transcription gets pasted wherever your cursor is. Works in any app.
 
+## Download
+
+**[Download SimpleDictation-1.3.0.dmg](https://github.com/cfranci/SimpleDictation/releases/latest)** -- open the DMG and drag SimpleDictation to your Applications folder. No dependencies required.
+
+Requires macOS 14.0 or later.
+
 ## How It Works
 
 1. You hold down the **fn** key (or option key)
@@ -13,25 +19,18 @@ Double-tap the key to press Enter (submits forms, sends messages).
 
 There's also a floating mic button on screen you can click instead of using the hotkey.
 
-## Setup (Mac)
+## Setup
 
-### Prerequisites
+### Option 1: Download the DMG (recommended)
 
-- macOS 14.0 or later
-- [Homebrew](https://brew.sh) installed
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) installed:
+1. Go to [Releases](https://github.com/cfranci/SimpleDictation/releases/latest)
+2. Download `SimpleDictation-1.3.0.dmg`
+3. Open the DMG and drag SimpleDictation to Applications
+4. Launch from Applications
 
-```bash
-brew install xcodegen
-```
+### Option 2: Build from source
 
-- Xcode Command Line Tools:
-
-```bash
-xcode-select --install
-```
-
-### Install and Build
+Requires [Homebrew](https://brew.sh), [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`), and Xcode Command Line Tools (`xcode-select --install`).
 
 ```bash
 git clone https://github.com/cfranci/SimpleDictation.git
@@ -68,9 +67,11 @@ The app comes with multiple speech-to-text engines. You can switch between them 
 | Whisper Medium | ~1.5 GB | ~7s | Great | Best for long-form |
 | Distil-Whisper Large v3 | ~594 MB | ~5s | Great | High accuracy, reasonable speed |
 | Distil-Whisper Large v3 Turbo | ~600 MB | ~9s | Best | Most accurate overall |
+| Whisper Large v3 Turbo | ~1.5 GB | ~5s | Best | Latest OpenAI model, streaming-optimized |
+| Whisper Large v3 Turbo (632MB) | ~632 MB | ~5s | Best | Compressed version, best bang for buck |
 | Moonshine Tiny | Bundled | ~1s | Fair | Comes with the app |
 
-**Start with Apple Speech** -- it works instantly with no downloads. If you want better accuracy, try Whisper Small or Distil-Whisper Large v3.
+**Start with Apple Speech** -- it works instantly with no downloads. If you select a model that hasn't been downloaded yet, the app uses Apple Speech as a fallback while the model downloads in the background, then switches over automatically.
 
 Models that aren't downloaded yet appear grayed out in the menu. Select one to start the download. You'll see a notification when it's ready.
 
@@ -95,12 +96,13 @@ SimpleDictation also includes clipboard history. The last 10 things you copied a
 ## Features
 
 - **Hold-to-talk** dictation with automatic paste
-- **8 speech engines** from instant to high-accuracy
-- **Floating mic button** with recording glow and audio level ring
+- **10 speech engines** from instant to high-accuracy
+- **Floating mic button** with recording glow, audio level ring, and resizable icon (10-50px)
 - **Clipboard history cycling** (last 10 copies, Cmd+V to cycle)
 - **Incremental mode** to see partial transcription as you speak
 - **16 languages** including English, Spanish, French, Chinese, Japanese
 - **Double-tap to submit** for chat boxes and forms
+- **Auto-fallback** to Apple Speech while models download
 - **Model management** with download progress notifications
 
 ## Rebuilding

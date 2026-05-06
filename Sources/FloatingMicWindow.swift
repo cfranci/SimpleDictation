@@ -10,6 +10,7 @@ class FloatingMicWindow: NSPanel {
     private var onRightClick: ((NSView) -> Void)?
     private var audioLevelTimer: Timer?
     private var lastClickTime: Date = Date.distantPast
+    private var circleSize: CGFloat
     private var isDragging = false
     private var dragStartPoint: NSPoint = .zero
     private var windowStartOrigin: NSPoint = .zero
@@ -20,14 +21,15 @@ class FloatingMicWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    init(speechManager: SpeechManager, onToggleRecording: @escaping () -> Void, onEnterPressed: @escaping () -> Void, onRightClick: @escaping (NSView) -> Void) {
+    init(speechManager: SpeechManager, circleSize: CGFloat = 40, onToggleRecording: @escaping () -> Void, onEnterPressed: @escaping () -> Void, onRightClick: @escaping (NSView) -> Void) {
         self.speechManager = speechManager
         self.onToggleRecording = onToggleRecording
         self.onEnterPressed = onEnterPressed
         self.onRightClick = onRightClick
+        self.circleSize = circleSize
 
-        let pillWidth: CGFloat = 44
-        let pillHeight: CGFloat = 58
+        let pillWidth = circleSize + 12
+        let pillHeight = circleSize + 26
 
         // Restore saved position or default to top-right
         let screen = NSScreen.main ?? NSScreen.screens.first!
@@ -97,6 +99,25 @@ class FloatingMicWindow: NSPanel {
         self.orderFrontRegardless()
     }
 
+    func updateSize(_ newSize: CGFloat) {
+        circleSize = newSize
+        let newWidth = newSize + 12
+        let newHeight = newSize + 26
+        let oldCenter = NSPoint(x: frame.midX, y: frame.midY)
+        let newFrame = NSRect(
+            x: oldCenter.x - newWidth / 2,
+            y: oldCenter.y - newHeight / 2,
+            width: newWidth,
+            height: newHeight
+        )
+        setFrame(newFrame, display: false)
+        micView.frame = NSRect(x: 0, y: 0, width: newWidth, height: newHeight)
+        micView.updateTrackingAreas()
+        micView.needsDisplay = true
+        UserDefaults.standard.set(Double(newFrame.origin.x), forKey: FloatingMicWindow.posXKey)
+        UserDefaults.standard.set(Double(newFrame.origin.y), forKey: FloatingMicWindow.posYKey)
+    }
+
     func handleLeftClick() {
         let now = Date()
         if now.timeIntervalSince(lastClickTime) < 0.4 {
@@ -131,6 +152,8 @@ class FloatingMicWindow: NSPanel {
         case "whisper-medium": label = "W-M"
         case "distil-large-v3": label = "DL3"
         case "distil-large-v3-turbo": label = "DL3T"
+        case "whisper-large-v3-turbo": label = "LT"
+        case "whisper-large-v3-turbo-632": label = "LT6"
         case "moonshine-tiny": label = "MS"
         default: label = engineMode
         }
@@ -162,6 +185,7 @@ class MicPillView: NSView {
     var isRecording = false
     var audioLevel: CGFloat = 0
     var engineLabel: String = "SR"
+    var isHovering = false
     var onLeftClick: (() -> Void)?
     var onRightClick: (() -> Void)?
     var onDragStart: ((NSEvent) -> Void)?
@@ -175,6 +199,22 @@ class MicPillView: NSView {
 
     // Accept clicks without requiring window activation first
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovering = true
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        needsDisplay = true
+    }
 
     override func mouseDown(with event: NSEvent) {
         mouseDownPoint = event.locationInWindow
@@ -204,19 +244,20 @@ class MicPillView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        // Circle area: top 44x44 of the 44x58 view
-        let circleRect = NSRect(x: 0, y: bounds.height - 44, width: 44, height: 44).insetBy(dx: 2, dy: 2)
+        let padding: CGFloat = 6
+        let labelHeight: CGFloat = 14
+        let circleSize = bounds.width - padding * 2
+        let circleRect = NSRect(x: padding, y: labelHeight + padding, width: circleSize, height: circleSize)
         let path = NSBezierPath(ovalIn: circleRect)
 
         if isRecording {
-            // Bright solid red — unmistakable active state
             NSColor(red: 1.0, green: 0.15, blue: 0.15, alpha: 1.0).setFill()
         } else {
-            NSColor(white: 0.15, alpha: 0.25).setFill()
+            let bgAlpha: CGFloat = isHovering ? 0.45 : 0.25
+            NSColor(white: 0.15, alpha: bgAlpha).setFill()
         }
         path.fill()
 
-        // Pulsing glow ring when recording
         if isRecording {
             let level = min(max(audioLevel, 0), 1.0)
             let ringWidth: CGFloat = 2.0 + 3.0 * level
@@ -227,58 +268,58 @@ class MicPillView: NSView {
             ringPath.stroke()
         }
 
-        // Mic icon
         let cx = circleRect.midX
         let cy = circleRect.midY
+        let scale = circleSize / 40.0
 
         if isRecording {
             NSColor.white.setFill()
             NSColor.white.setStroke()
         } else {
-            NSColor(white: 0.75, alpha: 0.25).setFill()
-            NSColor(white: 0.75, alpha: 0.25).setStroke()
+            let iconAlpha: CGFloat = isHovering ? 0.6 : 0.25
+            NSColor(white: 0.75, alpha: iconAlpha).setFill()
+            NSColor(white: 0.75, alpha: iconAlpha).setStroke()
         }
 
-        // Mic body
-        let micW: CGFloat = 8
-        let micH: CGFloat = 14
-        let micRect = NSRect(x: cx - micW / 2, y: cy - 1, width: micW, height: micH)
+        let lw = max(1.0, 1.5 * scale)
+        let micW: CGFloat = 8 * scale
+        let micH: CGFloat = 14 * scale
+        let micRect = NSRect(x: cx - micW / 2, y: cy - 1 * scale, width: micW, height: micH)
         let micPath = NSBezierPath(roundedRect: micRect, xRadius: micW / 2, yRadius: micW / 2)
         micPath.fill()
 
-        // Mic arc
         let arcPath = NSBezierPath()
-        arcPath.lineWidth = 1.5
-        let arcRadius: CGFloat = 7
-        let arcCenterY = cy + 3
+        arcPath.lineWidth = lw
+        let arcRadius: CGFloat = 7 * scale
+        let arcCenterY = cy + 3 * scale
         arcPath.appendArc(withCenter: NSPoint(x: cx, y: arcCenterY),
                           radius: arcRadius,
                           startAngle: 200, endAngle: 340)
         arcPath.stroke()
 
-        // Stand
         let standPath = NSBezierPath()
-        standPath.lineWidth = 1.5
+        standPath.lineWidth = lw
         standPath.move(to: NSPoint(x: cx, y: arcCenterY - arcRadius))
-        standPath.line(to: NSPoint(x: cx, y: cy - 10))
+        standPath.line(to: NSPoint(x: cx, y: cy - 10 * scale))
         standPath.stroke()
 
-        // Base
         let basePath = NSBezierPath()
-        basePath.lineWidth = 1.5
-        basePath.move(to: NSPoint(x: cx - 5, y: cy - 10))
-        basePath.line(to: NSPoint(x: cx + 5, y: cy - 10))
+        basePath.lineWidth = lw
+        basePath.move(to: NSPoint(x: cx - 5 * scale, y: cy - 10 * scale))
+        basePath.line(to: NSPoint(x: cx + 5 * scale, y: cy - 10 * scale))
         basePath.stroke()
 
-        // Engine label below the circle
-        let labelRect = NSRect(x: 0, y: 0, width: bounds.width, height: 14)
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .medium),
-            .foregroundColor: NSColor(white: 0.85, alpha: isRecording ? 1.0 : 0.25),
-            .paragraphStyle: paragraphStyle,
-        ]
-        (engineLabel as NSString).draw(in: labelRect, withAttributes: attrs)
+        if isHovering && !isRecording {
+            let labelRect = NSRect(x: 0, y: 0, width: bounds.width, height: labelHeight)
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.alignment = .center
+            let fontSize = max(7, 9 * scale)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
+                .foregroundColor: NSColor(white: 0.85, alpha: 0.6),
+                .paragraphStyle: paragraphStyle,
+            ]
+            (engineLabel as NSString).draw(in: labelRect, withAttributes: attrs)
+        }
     }
 }
