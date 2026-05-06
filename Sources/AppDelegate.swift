@@ -164,6 +164,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupLocalHotkeyMonitor()
         setupClipboardCycler()
 
+        // Set dock icon from bundled .icns
+        if let iconPath = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
+           let icon = NSImage(contentsOfFile: iconPath) {
+            NSApp.applicationIconImage = icon
+        }
+
         NSApp.setActivationPolicy(.accessory)
     }
     
