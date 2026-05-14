@@ -2,7 +2,7 @@ import Cocoa
 import Combine
 
 class StatusBarController: NSObject {
-    private var statusItem: NSStatusItem!
+    private(set) var statusItem: NSStatusItem!
     private(set) var menu: NSMenu!
     private var speechManager: SpeechManager
     private var cancellables = Set<AnyCancellable>()

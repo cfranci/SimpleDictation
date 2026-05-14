@@ -305,6 +305,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // When user double-clicks the app while it's already running as an accessory,
+        // show the status bar menu instead of hanging with "not responding"
+        if let button = statusBarController?.statusItem?.button {
+            button.performClick(nil)
+        }
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
