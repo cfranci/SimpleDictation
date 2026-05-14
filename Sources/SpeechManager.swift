@@ -10,6 +10,9 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     @Published var isRecording: Bool = false {
         didSet { onRecordingStateChanged?(isRecording) }
     }
+    @Published var isProcessing: Bool = false {
+        didSet { onProcessingStateChanged?(isProcessing) }
+    }
     @Published var isAuthorized: Bool = false
     @Published var availableMics: [AudioDeviceInfo] = []
     @Published var selectedMicID: AudioDeviceID = 0
@@ -38,6 +41,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     var onTextRecognized: ((String) -> Void)?
     var onFallbackToApple: ((String) -> Void)?
     var onRecordingStateChanged: ((Bool) -> Void)?
+    var onProcessingStateChanged: ((Bool) -> Void)?
     var incrementalMode: Bool = false  // Off by default: accumulate all, paste on stop
 
     /// Timestamp when recording actually started (used for short-recording guard)
@@ -733,6 +737,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         NSLog("[SimpleDictation] Whisper final transcription: %d samples (%.1fs)", samples.count, Float(samples.count) / 16000.0)
 
+        isProcessing = true
         let langCode = whisperLanguageCode
         let wasIncremental = incrementalMode
         let oldPastedCount = whisperPastedCharCount
@@ -740,30 +745,38 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             let text = await whisperManager.transcribe(samples: samples, language: langCode)
 
             await MainActor.run {
-                guard !text.isEmpty else { return }
+                guard !text.isEmpty else {
+                    self.isProcessing = false
+                    return
+                }
 
                 if self.isSilenceHallucination(text) {
                     NSLog("[SimpleDictation] Whisper: suppressed silence hallucination: '%@'", text)
+                    self.isProcessing = false
                     return
                 }
 
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Whisper final: %@", text)
 
-                if wasIncremental && oldPastedCount > 0 {
-                    // Delete old incremental text and replace with final full transcription
-                    self.deleteAndPaste(text)
-                } else {
-                    // Standard mode: just paste everything at once
-                    self.pasteText(text)
-                }
+                // Paste off main thread so the spinner animation stays smooth
+                DispatchQueue.global(qos: .userInteractive).async {
+                    if wasIncremental && oldPastedCount > 0 {
+                        self.deleteAndPaste(text)
+                    } else {
+                        self.pasteText(text)
+                    }
 
-                // Put the full transcript in the clipboard so user can access it
-                usleep(100000)
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                pb.setString(text, forType: .string)
-                NSLog("[SimpleDictation] Full transcript placed in clipboard (%d chars)", text.count)
+                    usleep(100000)
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(text, forType: .string)
+                    NSLog("[SimpleDictation] Full transcript placed in clipboard (%d chars)", text.count)
+
+                    DispatchQueue.main.async {
+                        self.isProcessing = false
+                    }
+                }
             }
         }
     }
@@ -944,33 +957,45 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         NSLog("[SimpleDictation] Moonshine final transcription: %d samples (%.1fs)", samples.count, Float(samples.count) / 16000.0)
 
+        isProcessing = true
         let wasIncremental = incrementalMode
         let oldPastedCount = whisperPastedCharCount
         Task {
             let text = await moonshineManager.transcribe(samples: samples)
 
             await MainActor.run {
-                guard !text.isEmpty else { return }
+                guard !text.isEmpty else {
+                    self.isProcessing = false
+                    return
+                }
 
                 if self.isSilenceHallucination(text) {
                     NSLog("[SimpleDictation] Moonshine: suppressed silence hallucination: '%@'", text)
+                    self.isProcessing = false
                     return
                 }
 
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Moonshine final: %@", text)
 
-                if wasIncremental && oldPastedCount > 0 {
-                    self.deleteAndPaste(text)
-                } else {
-                    self.pasteText(text)
-                }
+                // Paste off main thread so the spinner animation stays smooth
+                DispatchQueue.global(qos: .userInteractive).async {
+                    if wasIncremental && oldPastedCount > 0 {
+                        self.deleteAndPaste(text)
+                    } else {
+                        self.pasteText(text)
+                    }
 
-                usleep(100000)
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                pb.setString(text, forType: .string)
-                NSLog("[SimpleDictation] Full transcript placed in clipboard (%d chars)", text.count)
+                    usleep(100000)
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(text, forType: .string)
+                    NSLog("[SimpleDictation] Full transcript placed in clipboard (%d chars)", text.count)
+
+                    DispatchQueue.main.async {
+                        self.isProcessing = false
+                    }
+                }
             }
         }
     }

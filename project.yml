@@ -24,6 +24,7 @@ targets:
     dependencies:
       - package: WhisperKit
       - package: Moonshine
+        product: MoonshineVoice
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.simpledictation.app

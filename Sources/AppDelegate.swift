@@ -49,8 +49,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if isLoading {
                     self.showModelNotification("Downloading \(model.displayName)...")
                     self.statusBarController?.startDownloadFlash(forEngine: model.rawValue)
+                    self.floatingWindow?.updateDownloading(true)
                 } else {
                     self.statusBarController?.stopDownloadFlash()
+                    self.floatingWindow?.updateDownloading(false)
                     if success {
                         self.showModelNotification("✓ \(model.displayName) ready", autoDismiss: true)
                     } else {
@@ -67,6 +69,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         speechManager?.onRecordingStateChanged = { [weak self] recording in
             self?.statusBarController?.isRecording = recording
             self?.floatingWindow?.updateAppearance(recording: recording)
+        }
+
+        speechManager?.onProcessingStateChanged = { [weak self] processing in
+            self?.floatingWindow?.updateProcessing(processing)
         }
 
         statusBarController = StatusBarController(speechManager: speechManager!)
@@ -142,7 +148,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onRightClick: { [weak self] view in
                 guard let self = self, let menu = self.statusBarController?.menu else { return }
-                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height + 5), in: view)
+                guard let window = view.window, let screen = window.screen ?? NSScreen.main else {
+                    menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height + 5), in: view)
+                    return
+                }
+
+                let menuSize = menu.size
+                let viewFrameInScreen = window.convertToScreen(view.convert(view.bounds, to: nil))
+                let sf = screen.visibleFrame
+
+                // Decide whether to open upward or downward
+                let spaceAbove = sf.maxY - viewFrameInScreen.maxY
+                let spaceBelow = viewFrameInScreen.minY - sf.minY
+                let openUpward = spaceBelow > spaceAbove || spaceAbove < menuSize.height
+
+                // Horizontal: prefer left-aligned, shift left if it overflows
+                var x = viewFrameInScreen.minX
+                if x + menuSize.width > sf.maxX {
+                    x = viewFrameInScreen.maxX - menuSize.width
+                }
+                x = max(x, sf.minX)
+
+                // popUp(positioning:) places the chosen menu item at the given point.
+                // positioning: nil = top of menu at the point (opens downward).
+                // positioning: lastItem = bottom of menu at the point (opens upward).
+                let positionItem: NSMenuItem?
+                let y: CGFloat
+                if openUpward {
+                    // Anchor the last menu item at the top of the view
+                    positionItem = menu.items.last
+                    y = viewFrameInScreen.maxY + 5
+                } else {
+                    // Anchor the top of the menu at the top of the view
+                    positionItem = nil
+                    y = viewFrameInScreen.maxY + 5
+                }
+
+                let windowPoint = window.convertFromScreen(NSRect(origin: NSPoint(x: x, y: y), size: .zero)).origin
+                let viewPoint = view.convert(windowPoint, from: nil)
+                menu.popUp(positioning: positionItem, at: viewPoint, in: view)
             }
         )
 
