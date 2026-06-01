@@ -235,55 +235,11 @@ class StatusBarController: NSObject {
         let appleItem = NSMenuItem(title: "Apple Speech", action: #selector(setEngine(_:)), keyEquivalent: "")
         appleItem.target = self
         appleItem.tag = 601
+        appleItem.state = .on
         menu.addItem(appleItem)
 
-        // Whisper & Moonshine engines — macOS 14+ only
-        if #available(macOS 14, *) {
-            let whisperTinyItem = NSMenuItem(title: "Whisper Tiny (~40MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-            whisperTinyItem.target = self
-            whisperTinyItem.tag = 602
-            menu.addItem(whisperTinyItem)
-
-            let whisperBaseItem = NSMenuItem(title: "Whisper Base (~140MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-            whisperBaseItem.target = self
-            whisperBaseItem.tag = 603
-            menu.addItem(whisperBaseItem)
-
-            let whisperSmallItem = NSMenuItem(title: "Whisper Small (~460MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-            whisperSmallItem.target = self
-            whisperSmallItem.tag = 604
-            menu.addItem(whisperSmallItem)
-
-            let whisperMediumItem = NSMenuItem(title: "Whisper Medium (~1.5GB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-            whisperMediumItem.target = self
-            whisperMediumItem.tag = 605
-            menu.addItem(whisperMediumItem)
-
-            let distilV3Item = NSMenuItem(title: "Distil-Whisper Large v3 (~594MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-            distilV3Item.target = self
-            distilV3Item.tag = 606
-            menu.addItem(distilV3Item)
-
-            let distilV3TurboItem = NSMenuItem(title: "Distil-Whisper Large v3 Turbo (~600MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-            distilV3TurboItem.target = self
-            distilV3TurboItem.tag = 607
-            menu.addItem(distilV3TurboItem)
-
-            let largev3TurboItem = NSMenuItem(title: "Whisper Large v3 Turbo", action: #selector(setEngine(_:)), keyEquivalent: "")
-            largev3TurboItem.target = self
-            largev3TurboItem.tag = 609
-            menu.addItem(largev3TurboItem)
-
-            let largev3TurboCompItem = NSMenuItem(title: "Whisper Large v3 Turbo (632MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
-            largev3TurboCompItem.target = self
-            largev3TurboCompItem.tag = 610
-            menu.addItem(largev3TurboCompItem)
-
-            let moonTinyItem = NSMenuItem(title: "Moonshine Tiny (bundled)", action: #selector(setEngine(_:)), keyEquivalent: "")
-            moonTinyItem.target = self
-            moonTinyItem.tag = 608
-            menu.addItem(moonTinyItem)
-        }
+        // Ventura build: Apple Speech is the only engine. WhisperKit/Moonshine
+        // (macOS 14+ only) are not bundled in this fork.
 
         menu.addItem(NSMenuItem.separator())
 
@@ -444,99 +400,14 @@ class StatusBarController: NSObject {
     }
 
     @objc private func setEngine(_ sender: NSMenuItem) {
-        switch sender.tag {
-        case 601:
-            currentEngine = "apple"
-        case 602:
-            currentEngine = "whisper-tiny"
-        case 603:
-            currentEngine = "whisper-base"
-        case 604:
-            currentEngine = "whisper-small"
-        case 605:
-            currentEngine = "whisper-medium"
-        case 606:
-            currentEngine = "distil-large-v3"
-        case 607:
-            currentEngine = "distil-large-v3-turbo"
-        case 608:
-            currentEngine = "moonshine-tiny"
-        case 609:
-            currentEngine = "whisper-large-v3-turbo"
-        case 610:
-            currentEngine = "whisper-large-v3-turbo-632"
-        default:
-            break
-        }
+        // Ventura build: Apple Speech is the only engine.
+        currentEngine = "apple"
         onEngineChanged?(currentEngine)
     }
 
-    private var downloadFlashTimer: Timer?
-    private var flashingTag: Int = 0
-    private var flashState: Bool = false
-
     private func updateEngineMenu() {
-        let engineMap: [(tag: Int, mode: String, whisperModel: WhisperManager.Model?)] = [
-            (601, "apple", nil),
-            (602, "whisper-tiny", .tiny),
-            (603, "whisper-base", .base),
-            (604, "whisper-small", .small),
-            (605, "whisper-medium", .medium),
-            (606, "distil-large-v3", .distilLargeV3),
-            (607, "distil-large-v3-turbo", .distilLargeV3Turbo),
-            (609, "whisper-large-v3-turbo", .largev3Turbo),
-            (610, "whisper-large-v3-turbo-632", .largev3TurboCompressed),
-            (608, "moonshine-tiny", nil),  // bundled
-        ]
-        for entry in engineMap {
-            guard let item = menu.item(withTag: entry.tag) else { continue }
-            item.state = currentEngine == entry.mode ? .on : .off
-
-            // Gray out non-local whisper models (but keep them clickable)
-            if let model = entry.whisperModel {
-                let isLocal = speechManager.whisperManager.isModelLocal(model)
-                if !isLocal && currentEngine != entry.mode {
-                    let attrs: [NSAttributedString.Key: Any] = [
-                        .foregroundColor: NSColor.secondaryLabelColor,
-                        .font: NSFont.menuFont(ofSize: 0),
-                    ]
-                    item.attributedTitle = NSAttributedString(string: item.title, attributes: attrs)
-                } else {
-                    item.attributedTitle = nil  // reset to normal
-                }
-            }
-        }
-    }
-
-    /// Start flashing a menu item (while model downloads)
-    func startDownloadFlash(forEngine mode: String) {
-        let tagMap: [String: Int] = [
-            "whisper-tiny": 602, "whisper-base": 603, "whisper-small": 604,
-            "whisper-medium": 605, "distil-large-v3": 606, "distil-large-v3-turbo": 607,
-            "whisper-large-v3-turbo": 609, "whisper-large-v3-turbo-632": 610,
-        ]
-        guard let tag = tagMap[mode] else { return }
-        flashingTag = tag
-        flashState = false
-        downloadFlashTimer?.invalidate()
-        downloadFlashTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
-            guard let self = self, let item = self.menu.item(withTag: self.flashingTag) else { return }
-            self.flashState.toggle()
-            let color: NSColor = self.flashState ? .systemOrange : .secondaryLabelColor
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: color,
-                .font: NSFont.menuFont(ofSize: 0),
-            ]
-            item.attributedTitle = NSAttributedString(string: item.title, attributes: attrs)
-        }
-    }
-
-    /// Stop flashing
-    func stopDownloadFlash() {
-        downloadFlashTimer?.invalidate()
-        downloadFlashTimer = nil
-        flashingTag = 0
-        updateEngineMenu()
+        // Only the Apple Speech engine exists in this fork.
+        menu.item(withTag: 601)?.state = .on
     }
 
     @objc private func toggleEnabled() {

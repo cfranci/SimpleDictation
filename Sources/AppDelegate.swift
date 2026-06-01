@@ -40,31 +40,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.speechManager?.pasteText(text)
         }
 
-        speechManager?.engineMode = currentEngine
-
-        // Model download/loading notifications (macOS 14+ only)
-        if #available(macOS 14, *) {
-            speechManager?.whisperManager.onModelLoading = { [weak self] (isLoading, model, success) in
-                guard let self = self else { return }
-                if isLoading {
-                    self.showModelNotification("Downloading \(model.displayName)...")
-                    self.statusBarController?.startDownloadFlash(forEngine: model.rawValue)
-                    self.floatingWindow?.updateDownloading(true)
-                } else {
-                    self.statusBarController?.stopDownloadFlash()
-                    self.floatingWindow?.updateDownloading(false)
-                    if success {
-                        self.showModelNotification("✓ \(model.displayName) ready", autoDismiss: true)
-                    } else {
-                        self.showModelNotification("✗ \(model.displayName) failed", autoDismiss: true)
-                    }
-                }
-            }
-        }
-
-        speechManager?.onFallbackToApple = { [weak self] modelName in
-            self?.showModelNotification("Using Apple Speech while \(modelName) downloads...")
-        }
+        speechManager?.engineMode = "apple"  // Ventura build: Apple Speech only
 
         speechManager?.onRecordingStateChanged = { [weak self] recording in
             self?.statusBarController?.isRecording = recording
@@ -83,11 +59,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.currentEngine = engine
             self?.speechManager?.engineMode = engine
             self?.floatingWindow?.updateEngineLabel(engine)
-            if engine.hasPrefix("moonshine-") {
-                self?.speechManager?.preloadMoonshineModel()
-            } else if engine != "apple" {
-                self?.speechManager?.preloadWhisperModel()
-            }
         }
         statusBarController?.onEnabledChanged = { [weak self] (enabled: Bool) in
             if !enabled {
@@ -191,11 +162,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         speechManager?.checkAuthorization()
-        if currentEngine.hasPrefix("moonshine-") {
-            speechManager?.preloadMoonshineModel()
-        } else if currentEngine != "apple" {
-            speechManager?.preloadWhisperModel()
-        }
 
         let trusted = AXIsProcessTrusted()
         NSLog("[SimpleDictation] Accessibility trusted: %d", trusted)
