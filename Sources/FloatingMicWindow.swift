@@ -337,7 +337,7 @@ class MicPillView: NSView {
         } else if isProcessing {
             NSColor(white: 0.15, alpha: 0.35).setFill()
         } else {
-            let bgAlpha: CGFloat = isHovering ? 0.45 : 0.25
+            let bgAlpha: CGFloat = isHovering ? 0.85 : 0.65
             NSColor(white: 0.15, alpha: bgAlpha).setFill()
         }
         path.fill()
@@ -406,9 +406,9 @@ class MicPillView: NSView {
             NSColor.white.setFill()
             NSColor.white.setStroke()
         } else {
-            let iconAlpha: CGFloat = isHovering ? 0.6 : 0.25
-            NSColor(white: 0.75, alpha: iconAlpha).setFill()
-            NSColor(white: 0.75, alpha: iconAlpha).setStroke()
+            let iconAlpha: CGFloat = isHovering ? 1.0 : 0.85
+            NSColor(white: 0.9, alpha: iconAlpha).setFill()
+            NSColor(white: 0.9, alpha: iconAlpha).setStroke()
         }
 
         let lw = max(1.0, 1.5 * scale)

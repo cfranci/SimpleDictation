@@ -7,6 +7,8 @@ import Cocoa
 class ClipboardCycler {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var tapThread: Thread?
+    private var tapRunLoop: CFRunLoop?
     private var cycleIndex: Int = -1
     private var isCycling = false
     private var suppressNextVUp = false
@@ -18,31 +20,57 @@ class ClipboardCycler {
     var onCyclingStateChanged: ((Bool) -> Void)?
 
     func start() {
-        let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) |
-                                 (1 << CGEventType.keyUp.rawValue) |
-                                 (1 << CGEventType.flagsChanged.rawValue) |
-                                 (1 << CGEventType.leftMouseDown.rawValue) |
-                                 (1 << CGEventType.rightMouseDown.rawValue)
-
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-
-        guard let tap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: clipboardCyclerCallback,
-            userInfo: selfPtr
-        ) else {
-            slog("Failed to create event tap — check accessibility permissions")
+        // Run the tap on a DEDICATED thread, never the main run loop.
+        // A head-insert .cghidEventTap sits in the synchronous path of every
+        // system input event; if its run loop is ever blocked, ALL keyboard and
+        // trackpad input freezes system-wide. Keeping it off the main thread means
+        // a stalled main thread (model loading, UI work, etc.) can no longer wedge
+        // input — the tap thread keeps draining and passing events through.
+        guard tapThread == nil else {
+            slog("start() ignored — tap already running")
             return
         }
 
-        eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-        slog("Event tap created successfully")
+        let thread = Thread { [weak self] in
+            guard let self = self else { return }
+
+            let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue) |
+                                     (1 << CGEventType.keyUp.rawValue) |
+                                     (1 << CGEventType.flagsChanged.rawValue) |
+                                     (1 << CGEventType.leftMouseDown.rawValue) |
+                                     (1 << CGEventType.rightMouseDown.rawValue)
+
+            let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+
+            guard let tap = CGEvent.tapCreate(
+                tap: .cghidEventTap,
+                place: .headInsertEventTap,
+                options: .defaultTap,
+                eventsOfInterest: mask,
+                callback: clipboardCyclerCallback,
+                userInfo: selfPtr
+            ) else {
+                self.slog("Failed to create event tap — check accessibility permissions")
+                return
+            }
+
+            let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+            let runLoop = CFRunLoopGetCurrent()
+            self.eventTap = tap
+            self.runLoopSource = source
+            self.tapRunLoop = runLoop
+            CFRunLoopAddSource(runLoop, source, .commonModes)
+            CGEvent.tapEnable(tap: tap, enable: true)
+            self.slog("Event tap created successfully on dedicated thread")
+
+            // Drive this thread's run loop so the tap keeps receiving events.
+            CFRunLoopRun()
+            self.slog("Event tap run loop exited")
+        }
+        thread.name = "com.simpledictation.clipboardcycler.tap"
+        thread.qualityOfService = .userInteractive
+        tapThread = thread
+        thread.start()
     }
 
     func handleEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -97,7 +125,7 @@ class ClipboardCycler {
                     // First Cmd+V: pass through normally, start tracking
                     cycleIndex = 0
                     lastPastedLength = history[0].count
-                    onCyclingStateChanged?(true)
+                    notifyCyclingState(true)
                     slog("First Cmd+V, tracking cycle (history has \(history.count) items, len=\(lastPastedLength))")
                     return Unmanaged.passUnretained(event)
                 } else if !isCycling {
@@ -261,7 +289,14 @@ class ClipboardCycler {
         suppressNextVUp = false
         isCycling = false
         lastPastedLength = 0
-        onCyclingStateChanged?(false)
+        notifyCyclingState(false)
+    }
+
+    /// The tap callback runs on a background thread now, so any UI-facing
+    /// notification must hop to the main thread.
+    private func notifyCyclingState(_ cycling: Bool) {
+        let callback = onCyclingStateChanged
+        DispatchQueue.main.async { callback?(cycling) }
     }
 
     private func slog(_ msg: String) {
@@ -281,11 +316,17 @@ class ClipboardCycler {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        if let source = runLoopSource, let runLoop = tapRunLoop {
+            CFRunLoopRemoveSource(runLoop, source, .commonModes)
+        }
+        // Stop the dedicated tap thread's run loop so the thread can exit.
+        if let runLoop = tapRunLoop {
+            CFRunLoopStop(runLoop)
         }
         eventTap = nil
         runLoopSource = nil
+        tapRunLoop = nil
+        tapThread = nil
     }
 
     deinit {
