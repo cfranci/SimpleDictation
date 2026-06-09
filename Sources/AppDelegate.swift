@@ -8,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var clipboardCycler: ClipboardCycler?
     var eventMonitor: Any?
     var localMonitor: Any?
+    var triggerWatcher: TriggerWatcher?
     var lastKeyRelease: Date = Date.distantPast
     
     /// Set of enabled modifier keys. Any one triggers recording.
@@ -207,6 +208,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupGlobalHotkeyMonitor()
         setupLocalHotkeyMonitor()
         setupClipboardCycler()
+        setupExternalTrigger()
 
         // Set dock icon from bundled .icns
         if let iconPath = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
@@ -268,6 +270,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    /// External trigger: another app (e.g. AAA) writes a command to the trigger
+    /// file and we drive the same recording code path as the hotkey.
+    func setupExternalTrigger() {
+        triggerWatcher = TriggerWatcher { [weak self] cmd in
+            self?.handleExternalCommand(cmd)
+        }
+        NSLog("[SimpleDictation] External trigger watching %@", TriggerWatcher.defaultPath)
+    }
+
+    func handleExternalCommand(_ cmd: String) {
+        guard let speechManager = speechManager, let statusBarController = statusBarController else { return }
+        guard statusBarController.isEnabled else { return }
+
+        switch cmd {
+        case "start":
+            if speechManager.isRecording { return }
+            // Double-tap detection: a fresh start right after a stop sends Enter
+            if Date().timeIntervalSince(lastKeyRelease) < 0.4 {
+                NSLog("[SimpleDictation] External: double-tap, pressing Enter")
+                speechManager.pressEnter()
+                return
+            }
+            NSLog("[SimpleDictation] External: starting recording")
+            speechManager.startRecording()
+            statusBarController.isRecording = speechManager.isRecording
+            floatingWindow?.updateAppearance(recording: speechManager.isRecording)
+        case "stop":
+            if !speechManager.isRecording { return }
+            NSLog("[SimpleDictation] External: stopping recording")
+            lastKeyRelease = Date()
+            speechManager.stopRecording()
+            statusBarController.isRecording = false
+            floatingWindow?.updateAppearance(recording: false)
+        case "toggle":
+            handleExternalCommand(speechManager.isRecording ? "stop" : "start")
+        case "enter":
+            NSLog("[SimpleDictation] External: pressing Enter")
+            speechManager.pressEnter()
+        default:
+            NSLog("[SimpleDictation] External: unknown command '%@'", cmd)
+        }
+    }
+
     func setupClipboardCycler() {
         let cycler = ClipboardCycler()
         cycler.getClipboardHistory = { [weak self] in
