@@ -1,0 +1,937 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SimpleDictation, hold to talk, the words appear. On-device voice to text for Mac.</title>
+<meta name="description" content="Hold a key, talk, release, and your words appear wherever your cursor is. 100 percent on-device, works offline, your voice never leaves your Mac. $4.20 once, not $15 a month.">
+<link rel="canonical" href="https://cfranci.github.io/SimpleDictation">
+<meta name="theme-color" content="#0c0b0d">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SimpleDictation">
+<meta property="og:title" content="SimpleDictation, hold to talk, the words appear.">
+<meta property="og:description" content="On-device voice to text for Mac. Hold a key, talk, release, it appears anywhere. Works offline, your voice never leaves your Mac. $4.20 once.">
+<meta property="og:url" content="https://cfranci.github.io/SimpleDictation">
+<meta property="og:image" content="https://cfranci.github.io/SimpleDictationassets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SimpleDictation, hold to talk, the words appear.">
+<meta name="twitter:description" content="On-device voice to text for Mac. Hold, talk, release, it appears anywhere. Works offline. $4.20 once, not $15 a month.">
+<meta name="twitter:image" content="https://cfranci.github.io/SimpleDictationassets/og.png">
+
+<!-- Inline SVG mic favicon (no external file) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230c0b0d'/%3E%3Cpath d='M16 7a3.2 3.2 0 0 0-3.2 3.2v5.4a3.2 3.2 0 0 0 6.4 0v-5.4A3.2 3.2 0 0 0 16 7z' fill='%23ff7a3d'/%3E%3Cpath d='M10 15.2a6 6 0 0 0 12 0M16 21.2V25M12.5 25h7' stroke='%23ff5a2c' stroke-width='1.7' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
+
+<style>
+  :root{
+    --bg:#0c0b0d;
+    --bg-2:#131115;
+    --card:#18151b;
+    --card-2:#1e1a22;
+    --line:#2a2530;
+    --line-2:#3a3342;
+    --ink:#f4eef2;
+    --muted:#a79fb0;
+    --muted-2:#7c7488;
+    /* mic-glow accent: orange to red, distinct from MenuBarBuddy green */
+    --accent:#ff7a3d;
+    --accent-2:#ff4d2e;
+    --accent-glow:rgba(255,90,44,.55);
+    --good:#43d6a0;
+    --bad:#f0655a;
+    --radius:18px;
+    --maxw:1120px;
+    --mono:"SF Mono","JetBrains Mono","Fira Code",ui-monospace,Menlo,Consolas,monospace;
+    --shadow:0 24px 70px -24px rgba(0,0,0,.75);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+    background:
+      radial-gradient(1000px 600px at 82% -8%, rgba(255,90,44,.16), transparent 60%),
+      radial-gradient(900px 500px at 6% 4%, rgba(255,122,61,.08), transparent 55%),
+      var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    line-height:1.55;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+  h1,h2,h3{margin:0;letter-spacing:-.02em;line-height:1.08;font-weight:700}
+  h1{font-size:clamp(2.4rem,6vw,4.4rem)}
+  h2{font-size:clamp(1.7rem,4vw,2.7rem)}
+  p{margin:0}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .section{padding:clamp(64px,9vw,120px) 0}
+  .eyebrow{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:.78rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--accent);
+    padding:6px 12px;border-radius:999px;
+    background:rgba(255,90,44,.1);border:1px solid rgba(255,90,44,.24);
+  }
+  .lead{color:var(--muted);font-size:clamp(1.05rem,2.2vw,1.28rem);max-width:44ch}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:9px;
+    font-size:1.02rem;font-weight:650;
+    padding:15px 26px;border-radius:14px;
+    border:1px solid transparent;cursor:pointer;
+    transition:transform .16s ease,box-shadow .16s ease,background .16s ease,border-color .16s ease;
+    will-change:transform;
+  }
+  .btn-primary{
+    color:#1a0d06;
+    background:linear-gradient(180deg,var(--accent),var(--accent-2));
+    box-shadow:0 12px 30px -8px var(--accent-glow),inset 0 1px 0 rgba(255,255,255,.25);
+  }
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 18px 40px -8px var(--accent-glow),inset 0 1px 0 rgba(255,255,255,.3)}
+  .btn-ghost{color:var(--ink);background:rgba(255,255,255,.04);border-color:var(--line-2)}
+  .btn-ghost:hover{background:rgba(255,255,255,.08);border-color:var(--accent)}
+  .price-note{color:var(--muted-2);font-size:.86rem}
+
+  /* NAV */
+  header.nav{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:saturate(160%) blur(14px);
+    background:rgba(12,11,13,.72);
+    border-bottom:1px solid var(--line);
+  }
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;letter-spacing:-.01em}
+  .brand .logo{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:linear-gradient(180deg,#221c26,#151119);border:1px solid var(--line-2)}
+  .brand .logo svg{width:18px;height:18px}
+  .nav-links{display:flex;align-items:center;gap:26px}
+  .nav-links a{color:var(--muted);font-size:.92rem;font-weight:550}
+  .nav-links a:hover{color:var(--ink)}
+  .nav .btn{padding:9px 18px;font-size:.92rem}
+  @media(max-width:760px){.nav-links a:not(.btn){display:none}}
+
+  /* HERO */
+  .hero{padding-top:clamp(48px,7vw,84px)}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(32px,5vw,64px);align-items:center}
+  @media(max-width:940px){.hero-grid{grid-template-columns:1fr;gap:40px}}
+  .hero h1 span.grad{
+    background:linear-gradient(120deg,var(--accent) 10%,var(--accent-2) 80%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .hero .lead{margin-top:20px}
+  .cta-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:30px}
+  .trust{display:flex;flex-wrap:wrap;gap:18px;margin-top:26px;color:var(--muted-2);font-size:.88rem}
+  .trust span{display:inline-flex;align-items:center;gap:7px}
+  .dot-good{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)}
+
+  /* DEMO STAGE (the animated mock) */
+  .stage{
+    position:relative;
+    border:1px solid var(--line);
+    border-radius:26px;
+    background:
+      radial-gradient(600px 360px at 78% 8%, rgba(255,90,44,.12), transparent 65%),
+      linear-gradient(180deg,#151218,#100d13);
+    box-shadow:var(--shadow);
+    padding:26px;
+    min-height:380px;
+    overflow:hidden;
+  }
+  .stage-bar{display:flex;align-items:center;gap:8px;margin-bottom:22px}
+  .tl{width:11px;height:11px;border-radius:50%}
+  .tl.r{background:#ff5f57}.tl.y{background:#febc2e}.tl.g{background:#28c840}
+  .stage-title{margin-left:8px;color:var(--muted-2);font-size:.8rem;font-weight:550}
+  .chatline{color:var(--muted-2);font-size:.9rem;margin:2px 0 16px}
+  .chatbox{
+    display:flex;align-items:center;gap:10px;
+    background:#0f0d12;border:1px solid var(--line-2);border-radius:14px;
+    padding:15px 16px;min-height:56px;
+  }
+  .chatbox .field{flex:1;font-size:1.02rem;color:var(--ink);min-height:1.4em;word-break:break-word}
+  .chatbox .field.empty{color:var(--muted-2)}
+  .caret{
+    display:inline-block;width:2px;height:1.15em;vertical-align:-.18em;margin-left:1px;
+    background:var(--accent);border-radius:2px;
+    animation:blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
+  .send-btn{
+    width:38px;height:38px;flex:0 0 38px;border-radius:11px;display:grid;place-items:center;
+    background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#1a0d06;
+    transition:transform .12s ease, box-shadow .2s ease;
+  }
+  .send-btn.flash{transform:scale(1.12);box-shadow:0 0 0 6px rgba(255,90,44,.22)}
+  .send-btn svg{width:17px;height:17px}
+
+  /* floating mic in the stage */
+  .mic-zone{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:16px;margin:8px 0 26px;
+  }
+  .mic{
+    position:relative;width:76px;height:76px;border-radius:50%;
+    display:grid;place-items:center;cursor:default;
+    background:radial-gradient(circle at 50% 38%,#2a2330,#141019);
+    border:1px solid var(--line-2);
+    transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease;
+  }
+  .mic svg{width:30px;height:30px;color:var(--muted);transition:color .25s ease}
+  .mic .ring{
+    position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--accent);
+    opacity:0;transform:scale(.85);
+  }
+  .stage.recording .mic{
+    border-color:var(--accent);
+    transform:scale(1.04);
+    box-shadow:0 0 0 4px rgba(255,90,44,.16),0 0 44px var(--accent-glow);
+    animation:micpulse 1.5s ease-in-out infinite;
+  }
+  .stage.recording .mic svg{color:var(--accent)}
+  .stage.recording .mic .ring{animation:ringpulse 1.5s ease-out infinite}
+  @keyframes micpulse{0%,100%{box-shadow:0 0 0 4px rgba(255,90,44,.16),0 0 40px var(--accent-glow)}50%{box-shadow:0 0 0 8px rgba(255,90,44,.08),0 0 64px var(--accent-glow)}}
+  @keyframes ringpulse{0%{opacity:.6;transform:scale(.9)}100%{opacity:0;transform:scale(1.5)}}
+
+  /* soundwave */
+  .wave{display:flex;align-items:center;gap:4px;height:34px}
+  .wave i{
+    width:4px;height:8px;border-radius:3px;
+    background:linear-gradient(180deg,var(--accent),var(--accent-2));
+    opacity:.35;transition:opacity .2s ease;
+  }
+  .stage.recording .wave i{opacity:.95;animation:bar .9s ease-in-out infinite}
+  .stage.recording .wave i:nth-child(1){animation-delay:0s}
+  .stage.recording .wave i:nth-child(2){animation-delay:.08s}
+  .stage.recording .wave i:nth-child(3){animation-delay:.16s}
+  .stage.recording .wave i:nth-child(4){animation-delay:.24s}
+  .stage.recording .wave i:nth-child(5){animation-delay:.32s}
+  .stage.recording .wave i:nth-child(6){animation-delay:.40s}
+  .stage.recording .wave i:nth-child(7){animation-delay:.48s}
+  .stage.recording .wave i:nth-child(8){animation-delay:.30s}
+  .stage.recording .wave i:nth-child(9){animation-delay:.14s}
+  @keyframes bar{0%,100%{height:8px}50%{height:30px}}
+  .kbd-hint{color:var(--muted-2);font-size:.82rem;text-align:center;min-height:1.2em}
+  .kbd{
+    display:inline-block;padding:2px 8px;border-radius:7px;font-size:.78rem;font-weight:600;font-family:var(--mono);
+    background:#211b28;border:1px solid var(--line-2);color:var(--ink);
+    box-shadow:0 2px 0 var(--line);
+  }
+
+  /* generic cards / grids */
+  .grid{display:grid;gap:18px}
+  .cols-3{grid-template-columns:repeat(3,1fr)}
+  .cols-2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:900px){.cols-3{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:620px){.cols-3,.cols-2{grid-template-columns:1fr}}
+  .card{
+    background:linear-gradient(180deg,var(--card),var(--card-2));
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:24px;transition:border-color .2s ease,transform .2s ease;
+  }
+  .card:hover{border-color:rgba(255,90,44,.3);transform:translateY(-2px)}
+  .card h3{font-size:1.12rem;margin-bottom:8px}
+  .card p{color:var(--muted);font-size:.96rem}
+  .ico{
+    width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:16px;
+    background:rgba(255,90,44,.1);border:1px solid rgba(255,90,44,.22);color:var(--accent);
+  }
+  .ico svg{width:22px;height:22px}
+  .center{text-align:center}
+  .section-head{max-width:640px;margin:0 auto clamp(36px,5vw,56px)}
+  .section-head.left{margin-left:0;text-align:left}
+  .section-head p{color:var(--muted);margin-top:14px;font-size:1.05rem}
+
+  /* how it works */
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;counter-reset:s}
+  @media(max-width:820px){.steps{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:460px){.steps{grid-template-columns:1fr}}
+  .step{
+    position:relative;background:linear-gradient(180deg,var(--card),var(--card-2));
+    border:1px solid var(--line);border-radius:var(--radius);padding:24px 22px;
+  }
+  .step .num{
+    counter-increment:s;
+    font-size:.8rem;font-weight:700;color:var(--accent);
+    width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+    background:rgba(255,90,44,.1);border:1px solid rgba(255,90,44,.24);margin-bottom:14px;
+  }
+  .step .num::before{content:counter(s)}
+  .step h3{font-size:1.02rem}
+  .step p{color:var(--muted);font-size:.92rem;margin-top:6px}
+
+  /* engines table */
+  .engines-table{width:100%;border-collapse:collapse;font-size:.95rem}
+  .engines-table th{
+    text-align:left;padding:11px 14px;color:var(--muted-2);font-weight:600;
+    font-size:.74rem;text-transform:uppercase;letter-spacing:.07em;
+    border-bottom:1px solid var(--line-2);
+  }
+  .engines-table td{padding:13px 14px;border-bottom:1px solid rgba(42,37,48,.7);color:var(--muted)}
+  .engines-table td:first-child{color:var(--ink);font-weight:550}
+  .engines-table tr:last-child td{border-bottom:none}
+  .engines-table tr:hover td{background:rgba(255,255,255,.025)}
+  .badge-default{
+    font-size:.68rem;background:rgba(255,90,44,.15);color:var(--accent);
+    border:1px solid rgba(255,90,44,.24);border-radius:5px;padding:2px 7px;margin-left:7px;
+    font-weight:600;letter-spacing:.03em;
+  }
+  .dots{color:var(--accent);letter-spacing:1px}
+  .dots .off{color:var(--line-2)}
+  .table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:linear-gradient(180deg,var(--card),var(--card-2))}
+  .table-note{color:var(--muted-2);font-size:.85rem;text-align:center;margin-top:16px}
+
+  /* privacy split */
+  .privacy{
+    background:
+      radial-gradient(700px 400px at 90% 0%, rgba(67,214,160,.08), transparent 60%),
+      linear-gradient(180deg,var(--card),var(--card-2));
+    border:1px solid var(--line);border-radius:26px;padding:clamp(28px,4vw,48px);
+  }
+  .privacy-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:center}
+  @media(max-width:820px){.privacy-grid{grid-template-columns:1fr;gap:22px}}
+  .compare{display:grid;gap:12px}
+  .row{display:flex;align-items:flex-start;gap:12px;font-size:.98rem}
+  .row .tick{flex:0 0 22px;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:.72rem;font-weight:800;margin-top:1px}
+  .row.us .tick{background:rgba(67,214,160,.16);color:var(--good);border:1px solid rgba(67,214,160,.3)}
+  .row.them .tick{background:rgba(240,101,90,.12);color:var(--bad);border:1px solid rgba(240,101,90,.25)}
+  .row .tick svg{width:12px;height:12px}
+  .row b{color:var(--ink);font-weight:600}
+  .row span.sub{color:var(--muted)}
+
+  /* media / screenshots */
+  .video-frame{
+    border:1px solid var(--line);border-radius:22px;overflow:hidden;background:#0d0b10;
+    box-shadow:var(--shadow);
+  }
+  .video-frame video{display:block;width:100%;height:auto}
+  .video-fallback{aspect-ratio:16/9;display:grid;place-items:center;color:var(--muted-2);text-align:center;padding:24px;gap:8px}
+  .video-fallback .ico{margin:0 auto}
+  .shots{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:820px){.shots{grid-template-columns:1fr}}
+  .shot{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#0f0d12}
+  .shot img{display:block;width:100%;height:auto}
+  .shot .cap{padding:12px 15px;color:var(--muted);font-size:.86rem;border-top:1px solid var(--line)}
+  .shot-ph{aspect-ratio:16/10;display:grid;place-items:center;color:var(--muted-2);font-size:.85rem}
+
+  /* pricing */
+  .price-wrap{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:860px;margin:0 auto;align-items:stretch}
+  @media(max-width:720px){.price-wrap{grid-template-columns:1fr}}
+  .plan{border-radius:22px;padding:30px;display:flex;flex-direction:column}
+  .plan.them{background:linear-gradient(180deg,#161318,#121016);border:1px solid var(--line)}
+  .plan.us{
+    position:relative;
+    background:linear-gradient(180deg,#211619,#18121a);
+    border:1px solid rgba(255,90,44,.42);
+    box-shadow:0 0 0 1px rgba(255,90,44,.12),0 30px 70px -30px var(--accent-glow);
+  }
+  .plan .tag{font-size:.8rem;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-2)}
+  .plan.us .tag{color:var(--accent)}
+  .plan .amt{display:flex;align-items:flex-end;gap:8px;margin:14px 0 4px}
+  .plan .amt .big{font-size:3.1rem;font-weight:800;letter-spacing:-.03em;line-height:1}
+  .plan.them .amt .big{color:var(--muted)}
+  .plan .amt .per{color:var(--muted-2);font-size:1rem;padding-bottom:8px}
+  .plan .sub{color:var(--muted);font-size:.94rem;min-height:2.4em}
+  .plan ul{list-style:none;margin:20px 0 24px;padding:0;display:grid;gap:11px}
+  .plan li{display:flex;gap:10px;align-items:flex-start;color:var(--muted);font-size:.95rem}
+  .plan li svg{width:17px;height:17px;flex:0 0 17px;margin-top:3px}
+  .plan.us li svg{color:var(--good)}
+  .plan.them li svg{color:var(--bad)}
+  .plan .btn{width:100%;margin-top:auto}
+  .badge-best{
+    position:absolute;top:-13px;left:30px;
+    font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    color:#1a0d06;background:linear-gradient(180deg,var(--accent),var(--accent-2));
+    padding:5px 12px;border-radius:999px;
+  }
+  .math{text-align:center;color:var(--muted-2);font-size:.92rem;margin-top:22px}
+  .math b{color:var(--ink)}
+
+  /* FAQ */
+  .faq{max-width:760px;margin:0 auto;display:grid;gap:12px}
+  details{
+    background:linear-gradient(180deg,var(--card),var(--card-2));
+    border:1px solid var(--line);border-radius:14px;padding:2px 20px;
+  }
+  details[open]{border-color:var(--line-2)}
+  summary{
+    list-style:none;cursor:pointer;padding:18px 0;
+    font-weight:600;font-size:1.03rem;display:flex;justify-content:space-between;align-items:center;gap:16px;
+  }
+  summary::-webkit-details-marker{display:none}
+  summary .plus{flex:0 0 20px;color:var(--accent);transition:transform .2s ease;font-size:1.3rem;line-height:1}
+  details[open] summary .plus{transform:rotate(45deg)}
+  details .ans{color:var(--muted);padding:0 0 20px;font-size:.98rem;margin-top:-4px}
+  details .ans a{color:var(--accent)}
+
+  /* final CTA */
+  .final{
+    text-align:center;
+    background:
+      radial-gradient(700px 380px at 50% 0%, rgba(255,90,44,.2), transparent 62%),
+      linear-gradient(180deg,var(--card),var(--card-2));
+    border:1px solid rgba(255,90,44,.3);border-radius:26px;padding:clamp(40px,6vw,72px) 24px;
+  }
+  .final h2{margin-bottom:12px}
+  .final .lead{margin:0 auto}
+
+  /* footer */
+  footer{border-top:1px solid var(--line);padding:40px 0;color:var(--muted-2)}
+  .foot-in{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+  .foot-links{display:flex;flex-wrap:wrap;gap:22px;font-size:.9rem}
+  .foot-links a{color:var(--muted)}
+  .foot-links a:hover{color:var(--ink)}
+  .foot-brand{display:flex;align-items:center;gap:10px;font-weight:650;color:var(--ink)}
+  .foot-brand svg{width:20px;height:20px;color:var(--accent)}
+
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation-duration:0.001ms !important;animation-iteration-count:1 !important;transition-duration:0.001ms !important}
+    .caret{animation:none;opacity:1}
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="#top">
+      <span class="logo">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a2.4 2.4 0 0 0-2.4 2.4v6a2.4 2.4 0 0 0 4.8 0v-6A2.4 2.4 0 0 0 12 3z" fill="#ff7a3d"/><path d="M6.5 11.4a5.5 5.5 0 0 0 11 0M12 16.9V20M9 20h6" stroke="#ff5a2c" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </span>
+      SimpleDictation
+    </a>
+    <nav class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#engines">Engines</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <a class="btn btn-primary" href="{BUY_URL}">Buy for $4.20</a>
+    </nav>
+  </div>
+</header>
+
+<!-- HERO -->
+<main id="top">
+<section class="section hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">On-device voice to text for Mac</span>
+      <h1 style="margin-top:20px">Hold to talk.<br><span class="grad">The words just appear.</span></h1>
+      <p class="lead">Hold a key, say what you mean, release. Your words appear straight into whatever you are looking at, a chat box, an editor, a search bar, any app. No cloud. Your voice never leaves your Mac.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="{BUY_URL}">Buy SimpleDictation, $4.20 once</a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+      </div>
+      <div class="trust">
+        <span><span class="dot-good"></span> 100% on-device</span>
+        <span><span class="dot-good"></span> Works offline</span>
+        <span><span class="dot-good"></span> One payment, forever</span>
+        <span><span class="dot-good"></span> macOS 14+</span>
+      </div>
+    </div>
+
+    <!-- ANIMATED DEMO STAGE -->
+    <div class="stage" id="stage" aria-hidden="true">
+      <div class="stage-bar">
+        <span class="tl r"></span><span class="tl y"></span><span class="tl g"></span>
+        <span class="stage-title">Messages</span>
+      </div>
+
+      <div class="mic-zone">
+        <div class="mic" id="demoMic">
+          <span class="ring"></span>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3a2.4 2.4 0 0 0-2.4 2.4v6a2.4 2.4 0 0 0 4.8 0v-6A2.4 2.4 0 0 0 12 3z" fill="currentColor"/><path d="M6.5 11.4a5.5 5.5 0 0 0 11 0M12 16.9V20M9 20h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+        <div class="wave" id="wave">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <div class="kbd-hint" id="hint"><span class="kbd">fn</span> hold to talk</div>
+      </div>
+
+      <p class="chatline">Type a message</p>
+      <div class="chatbox">
+        <div class="field empty" id="field">Message</div>
+        <div class="send-btn" id="sendBtn" title="Send">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="eyebrow">Four seconds, start to finish</span>
+      <h2 style="margin-top:16px">Talking is faster than typing</h2>
+      <p>No app to switch to, no window to click into. It works right where your cursor already is.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="num"></div>
+        <h3>Hold the key</h3>
+        <p>Press and hold <span class="kbd">fn</span> (or <span class="kbd">option</span>, your choice). The mic glows to show it is listening.</p>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <h3>Talk</h3>
+        <p>Say a word, a sentence, a paragraph. Speak naturally in any of 16 languages and dialects.</p>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <h3>Release</h3>
+        <p>Let go of the key. Your words are pasted in wherever the cursor is sitting.</p>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <h3>Double-tap to send</h3>
+        <p>Double-tap the key and it presses Enter for you, so messages and forms fire off hands free.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="eyebrow">What you get</span>
+      <h2 style="margin-top:16px">Small app, serious range</h2>
+      <p>Everything runs locally. Pick the engine that fits, from instant to studio-grade accuracy.</p>
+    </div>
+
+    <div class="grid cols-3">
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <h3>10 local speech engines</h3>
+        <p>Apple Speech is instant with nothing to download. The full Whisper family (Tiny to Large v3 Turbo) plus bundled Moonshine download in the background and switch in automatically. No API keys, no usage bills, ever.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z" stroke="currentColor" stroke-width="2"/><path d="M8 12l3 3 5-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Works offline</h3>
+        <p>On a plane, on bad hotel wifi, or fully air-gapped, it does not matter. Once your engine is on your Mac, dictation keeps working with zero connection.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3a2.4 2.4 0 0 0-2.4 2.4v6a2.4 2.4 0 0 0 4.8 0v-6A2.4 2.4 0 0 0 12 3z" fill="currentColor"/><path d="M6.5 11.4a5.5 5.5 0 0 0 11 0M12 16.9V20" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+        <h3>Floating mic button</h3>
+        <p>A movable, resizable mic (10 to 50px) sits on screen. It glows while recording, an audio-level ring reacts to your voice, and one click toggles listening if you would rather not use the key.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="3" width="12" height="15" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 8h4M8 12h4M8 21h8a2 2 0 0 0 2-2V8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <h3>Clipboard history</h3>
+        <p>Your last 10 copies are kept. Hold <span class="kbd">Cmd</span> and tap <span class="kbd">V</span> to cycle back through them, in Chrome, Safari, Notes, TextEdit, and most apps.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H4z" stroke="currentColor" stroke-width="2"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <h3>Works in any app</h3>
+        <p>The transcript is dropped in via the clipboard and paste, so your words land anywhere paste works: Slack, iMessage, Notion, VS Code, address bars, spreadsheet cells, comment fields. No integrations to set up.</p>
+      </div>
+      <div class="card">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z" fill="currentColor"/></svg></div>
+        <h3>Incremental mode</h3>
+        <p>Turn on live partial transcription to watch words appear as you speak, then release to commit. Great for long-form. Menu bar and floating mic both give you the full settings.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ENGINES TABLE -->
+<section class="section" id="engines">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="eyebrow">Speech engines</span>
+      <h2 style="margin-top:16px">Pick the right brain for the job</h2>
+      <p>All run locally on your Mac. No API costs ever, whichever you use.</p>
+    </div>
+
+    <div class="table-scroll">
+      <table class="engines-table">
+        <thead>
+          <tr>
+            <th>Engine</th>
+            <th>Download</th>
+            <th>Speed</th>
+            <th>Accuracy</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Apple Speech <span class="badge-default">default</span></td>
+            <td>Nothing</td>
+            <td>Instant</td>
+            <td><span class="dots">&#9679;&#9679;&#9679;<span class="off">&#9679;&#9679;</span></span></td>
+          </tr>
+          <tr>
+            <td>Moonshine Tiny</td>
+            <td>Bundled</td>
+            <td>~1s</td>
+            <td><span class="dots">&#9679;&#9679;<span class="off">&#9679;&#9679;&#9679;</span></span></td>
+          </tr>
+          <tr>
+            <td>Whisper Tiny</td>
+            <td>~40 MB</td>
+            <td>~1s</td>
+            <td><span class="dots">&#9679;&#9679;<span class="off">&#9679;&#9679;&#9679;</span></span></td>
+          </tr>
+          <tr>
+            <td>Whisper Base</td>
+            <td>~140 MB</td>
+            <td>~2s</td>
+            <td><span class="dots">&#9679;&#9679;&#9679;<span class="off">&#9679;&#9679;</span></span></td>
+          </tr>
+          <tr>
+            <td>Whisper Small <span class="badge-default">recommended</span></td>
+            <td>~460 MB</td>
+            <td>~4s</td>
+            <td><span class="dots">&#9679;&#9679;&#9679;&#9679;<span class="off">&#9679;</span></span></td>
+          </tr>
+          <tr>
+            <td>Distil-Whisper Large v3</td>
+            <td>~594 MB</td>
+            <td>~5s</td>
+            <td><span class="dots">&#9679;&#9679;&#9679;&#9679;<span class="off">&#9679;</span></span></td>
+          </tr>
+          <tr>
+            <td>Whisper Large v3 Turbo (632MB)</td>
+            <td>~632 MB</td>
+            <td>~5s</td>
+            <td><span class="dots">&#9679;&#9679;&#9679;&#9679;&#9679;</span></td>
+          </tr>
+          <tr>
+            <td>Whisper Large v3 Turbo</td>
+            <td>~1.5 GB</td>
+            <td>~5s</td>
+            <td><span class="dots">&#9679;&#9679;&#9679;&#9679;&#9679;</span></td>
+          </tr>
+          <tr>
+            <td>Distil-Whisper Large v3 Turbo</td>
+            <td>~600 MB</td>
+            <td>~9s</td>
+            <td><span class="dots">&#9679;&#9679;&#9679;&#9679;&#9679;</span></td>
+          </tr>
+          <tr>
+            <td>Whisper Medium</td>
+            <td>~1.5 GB</td>
+            <td>~7s</td>
+            <td><span class="dots">&#9679;&#9679;&#9679;&#9679;<span class="off">&#9679;</span></span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note">Start with Apple Speech. Select any other engine and it downloads in the background, with Apple Speech covering you until it is ready, then switches in automatically.</p>
+  </div>
+</section>
+
+<!-- VIDEO + SCREENSHOTS -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="eyebrow">See it move</span>
+      <h2 style="margin-top:16px">Watch the words land</h2>
+      <p>Hold, talk, release. The text just appears. No editing gymnastics.</p>
+    </div>
+
+    <div class="video-frame" style="margin-bottom:22px">
+      <video src="assets/demo.mp4" poster="assets/poster.png" controls playsinline preload="metadata" muted>
+        <div class="video-fallback">
+          <div class="ico"><svg viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></div>
+          <p>Your browser cannot play this demo. Hold a key, talk, release, and SimpleDictation drops your words in wherever the cursor is.</p>
+        </div>
+      </video>
+    </div>
+
+    <div class="shots">
+      <figure class="shot" style="margin:0">
+        <img src="assets/menubar.png" alt="SimpleDictation menu bar dropdown showing the list of local speech engines" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'shot-ph',textContent:'assets/menubar.png'}))">
+        <figcaption class="cap">The menu bar, pick your engine in a click.</figcaption>
+      </figure>
+      <figure class="shot" style="margin:0">
+        <img src="assets/floating-mic.png" alt="Close-up of the floating mic button glowing while recording, with the audio level ring active" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'shot-ph',textContent:'assets/floating-mic.png'}))">
+        <figcaption class="cap">The floating mic, glowing mid-recording.</figcaption>
+      </figure>
+      <figure class="shot" style="margin:0">
+        <img src="assets/typing.png" alt="Text freshly dictated by SimpleDictation appearing inside a Mac app" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'shot-ph',textContent:'assets/typing.png'}))">
+        <figcaption class="cap">Dictated text, dropped right into the app.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- PRIVACY -->
+<section class="section" id="privacy">
+  <div class="wrap">
+    <div class="privacy">
+      <div class="privacy-grid">
+        <div>
+          <span class="eyebrow" style="color:var(--good);background:rgba(67,214,160,.1);border-color:rgba(67,214,160,.24)">Privacy by design</span>
+          <h2 style="margin-top:16px">Your voice never leaves your Mac</h2>
+          <p class="lead" style="margin-top:16px">Every engine runs on-device. There is no server to send audio to, no account to create, no transcript sitting in someone else's cloud. Turn off wifi and it still works, that is how you know the audio was never going anywhere. If audio were leaving your machine, offline dictation would be impossible.</p>
+          <p style="margin-top:18px;color:var(--muted-2);font-size:.9rem">Nothing is collected, nothing is uploaded, nothing is sold. There is no telemetry and no account that could receive your data even if the app wanted to send it.</p>
+        </div>
+        <div class="compare">
+          <div class="row us">
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-11" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <div><b>SimpleDictation, on your Mac</b><br><span class="sub">Audio processed locally, works offline, no account, one-time price.</span></div>
+          </div>
+          <div class="row them">
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>
+            <div><b>Cloud dictation subscriptions</b><br><span class="sub">Voice streamed to their servers, needs a connection, an account, and $12 to $15 every month.</span></div>
+          </div>
+          <div class="row us">
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-11" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <div><b>You own it</b><br><span class="sub">Buy once, keep it. No renewal, no seat that expires when you stop paying.</span></div>
+          </div>
+          <div class="row them">
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span>
+            <div><b>They keep charging</b><br><span class="sub">Stop paying and dictation stops with it, however much you have already spent.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="eyebrow">The whole pitch</span>
+      <h2 style="margin-top:16px">One coffee. Yours forever.</h2>
+      <p>The others rent you dictation by the month. This one you just buy.</p>
+    </div>
+
+    <div class="price-wrap">
+      <div class="plan them">
+        <span class="tag">Cloud subscription</span>
+        <div class="amt"><span class="big">$15</span><span class="per">/ month, forever</span></div>
+        <p class="sub">$180 a year, every year, and your voice goes to their servers.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg> Charged again next month, and the month after</li>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg> Needs an internet connection to work</li>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg> Audio leaves your machine</li>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg> Stops working the day you cancel</li>
+        </ul>
+        <a class="btn btn-ghost" href="#faq">Why pay monthly?</a>
+      </div>
+
+      <div class="plan us">
+        <span class="badge-best">Best value, obviously</span>
+        <span class="tag">SimpleDictation</span>
+        <div class="amt"><span class="big">$4.20</span><span class="per">once, that is it</span></div>
+        <p class="sub">Pay one time, own it forever. Notarized, so it opens with no security warning, and it auto-updates. On-device. Offline.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-11" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg> One payment, no subscription, ever</li>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-11" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 10 local engines, works fully offline</li>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-11" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg> Your voice never leaves your Mac</li>
+          <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l4 4 10-11" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg> Floating mic, clipboard history, any-app paste</li>
+        </ul>
+        <a class="btn btn-primary" href="{BUY_URL}">Buy for $4.20</a>
+      </div>
+    </div>
+
+    <p class="math">A single month of a $15 dictation subscription costs <b>three and a half SimpleDictations</b>. A year of it buys you <b>42 of them</b>.</p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" id="faq">
+  <div class="wrap">
+    <div class="section-head center">
+      <span class="eyebrow">Good questions</span>
+      <h2 style="margin-top:16px">Honest answers</h2>
+    </div>
+
+    <div class="faq">
+      <details open>
+        <summary>Why $4.20? <span class="plus">+</span></summary>
+        <div class="ans">Because it is a fair price for a small tool that does one thing well, and because the number makes us smile. The real point: it is one payment, not a monthly bill. Buy it, own it, done.</div>
+      </details>
+      <details>
+        <summary>Is my voice uploaded anywhere? <span class="plus">+</span></summary>
+        <div class="ans">Never. Every speech engine runs on your Mac, either Apple's on-device Speech framework or a Whisper or Moonshine model running locally. There is no server, no account, no cloud transcript. The simplest proof is that it keeps working with your internet turned off. If audio were leaving your machine, offline dictation would be impossible.</div>
+      </details>
+      <details>
+        <summary>Does it really work offline? <span class="plus">+</span></summary>
+        <div class="ans">Yes. Apple Speech works out of the box. The Whisper and Moonshine models download once (in the background, with Apple Speech covering you meanwhile), and after that everything is local. Plane mode, dead wifi, air-gapped machine, it all keeps working.</div>
+      </details>
+      <details>
+        <summary>Which speech engine should I use? <span class="plus">+</span></summary>
+        <div class="ans">Start with Apple Speech, it is instant and needs no download. If you want higher accuracy, especially for long-form or accents, download a Whisper model from the menu. Whisper Small is the sweet spot for most people, and the Large v3 Turbo models are the most accurate. You can switch anytime from the menu bar.</div>
+      </details>
+      <details>
+        <summary>How accurate is it compared to Apple's built-in dictation? <span class="plus">+</span></summary>
+        <div class="ans">Apple Speech uses the same underlying framework as macOS built-in dictation, so accuracy is comparable, and instant. The difference is choice: with a Whisper model selected, accuracy on longer or trickier speech, technical vocabulary, or accented voices is noticeably better. And unlike Apple's system dictation, you decide which engine runs and you are never nudged toward an online mode.</div>
+      </details>
+      <details>
+        <summary>Is this on the Mac App Store? <span class="plus">+</span></summary>
+        <div class="ans">No, and by design. SimpleDictation drops your words into other apps through the clipboard and paste, which needs the Accessibility permission and is not allowed inside the App Store sandbox. Selling it directly means it can do the thing you actually want it to do. Setup is simple: download the DMG, drag SimpleDictation to your Applications folder, and open it. v2 is notarized and Developer ID signed, so it opens with no security warning. When you launch it, grant the three permissions it asks for (Microphone, Accessibility, and Speech Recognition) and you are set.</div>
+      </details>
+      <details>
+        <summary>How does it get text into other apps? <span class="plus">+</span></summary>
+        <div class="ans">When you release the key, SimpleDictation puts the transcript on your clipboard and pastes it at your cursor. That is why it works in Slack, Notion, VS Code, address bars, and almost anywhere else without any per-app integration. It also means the Accessibility permission is required, and that the clipboard history feature comes along for free.</div>
+      </details>
+      <details>
+        <summary>Can I use it on more than one Mac? <span class="plus">+</span></summary>
+        <div class="ans">Yes. There is no license server and no activation check, the app never phones home. Buy it once and install it on any Mac you own, just copy the DMG over and drag it to Applications on each machine.</div>
+      </details>
+      <details>
+        <summary>I already use the free version. Do I have to pay? <span class="plus">+</span></summary>
+        <div class="ans">No. v1.3.0 stays free forever and keeps working exactly as it does today. v2.0.0 is the maintained version with ongoing updates and new engines. It is $4.20 one time if you want it, or keep the free one, or build it yourself from source. No pressure either way.</div>
+      </details>
+      <details>
+        <summary>I already use the free version. What happens? <span class="plus">+</span></summary>
+        <div class="ans">Straight answer: if you are already running the free build from GitHub, or you built it from source, you keep it, nothing gets taken away from you. Going forward SimpleDictation is a paid app, and buying it is what supports new engines, fixes, and updates. If you have gotten value from it, $4.20 is the honest way to say thanks and keep it improving.</div>
+      </details>
+      <details>
+        <summary>Do I get updates? And what about refunds? <span class="plus">+</span></summary>
+        <div class="ans">Updates are included. v2 checks for new versions and updates itself, and you never lose your settings. If it is not for you, reply to the receipt within 30 days at <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a> and you get your $4.20 back, no hassle.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="section">
+  <div class="wrap">
+    <div class="final">
+      <span class="eyebrow">Ready when you are</span>
+      <h2 style="margin-top:16px">Stop typing. Start talking.</h2>
+      <p class="lead" style="margin-top:14px">One key, your voice, and text appears. Own it for $4.20, keep it forever, and never send your voice to the cloud again.</p>
+      <div class="cta-row" style="justify-content:center;margin-top:28px">
+        <a class="btn btn-primary" href="{BUY_URL}">Buy SimpleDictation, $4.20</a>
+        <a class="btn btn-ghost" href="https://github.com/cfranci/SimpleDictation">View on GitHub</a>
+      </div>
+      <p class="price-note" style="margin-top:14px">One-time payment. macOS 14 or later. Delivered as a DMG.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap foot-in">
+    <div class="foot-brand">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a2.4 2.4 0 0 0-2.4 2.4v6a2.4 2.4 0 0 0 4.8 0v-6A2.4 2.4 0 0 0 12 3z" fill="currentColor"/><path d="M6.5 11.4a5.5 5.5 0 0 0 11 0M12 16.9V20M9 20h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      SimpleDictation
+    </div>
+    <nav class="foot-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#engines">Engines</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/cfranci/SimpleDictation">GitHub</a>
+      <a href="mailto:{SUPPORT_EMAIL}">{SUPPORT_EMAIL}</a>
+    </nav>
+  </div>
+  <div class="wrap" style="margin-top:22px;font-size:.82rem;color:var(--muted-2)">
+    Made for people who talk faster than they type. Your voice never leaves your Mac. Requires macOS 14+ with Microphone, Accessibility, and Speech Recognition permissions. Whisper models are open weights from OpenAI, Moonshine is from Useful Sensors. Not affiliated with Apple.
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var stage = document.getElementById('stage');
+  var field = document.getElementById('field');
+  var hint  = document.getElementById('hint');
+  var sendBtn = document.getElementById('sendBtn');
+  if(!stage || !field) return;
+
+  var phrases = [
+    "Hey, running five minutes late, see you soon",
+    "Let me know if that works for you",
+    "I'll have this done by end of day",
+    "Sounds good, talk soon"
+  ];
+  var phraseIndex = 0;
+  var timers = [];
+  function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+  function after(ms, fn){ var t = setTimeout(fn, ms); timers.push(t); return t; }
+
+  function setEmpty(){
+    field.classList.add('empty');
+    field.textContent = 'Message';
+  }
+  function typeOut(text, done){
+    field.classList.remove('empty');
+    field.innerHTML = '<span id="typed"></span><span class="caret"></span>';
+    var typed = document.getElementById('typed');
+    var i = 0;
+    (function tick(){
+      if(i <= text.length){
+        typed.textContent = text.slice(0, i);
+        i++;
+        after(38 + Math.random()*45, tick);
+      } else if(done){ done(); }
+    })();
+  }
+
+  // Reduced motion: show the finished state, no looping animation.
+  if(reduce){
+    stage.classList.remove('recording');
+    field.classList.remove('empty');
+    field.innerHTML = '<span>' + phrases[0] + '</span>';
+    hint.innerHTML = 'Hold <span class="kbd">fn</span>, talk, release. It pastes.';
+    return;
+  }
+
+  function cycle(){
+    clearTimers();
+    var phrase = phrases[phraseIndex % phrases.length];
+    phraseIndex++;
+
+    // 1) idle
+    setEmpty();
+    stage.classList.remove('recording');
+    hint.innerHTML = '<span class="kbd">fn</span> hold to talk';
+
+    // 2) press + record (mic glows, wave animates)
+    after(1100, function(){
+      stage.classList.add('recording');
+      hint.innerHTML = 'Listening&hellip;';
+    });
+
+    // 3) release -> type it out
+    after(3300, function(){
+      stage.classList.remove('recording');
+      hint.innerHTML = 'Release. Pasting&hellip;';
+      typeOut(phrase, function(){
+        // 4) double-tap beat -> send flash
+        after(700, function(){
+          hint.innerHTML = 'Double-tap <span class="kbd">fn</span> = <span class="kbd">Enter</span>';
+          sendBtn.classList.add('flash');
+          after(420, function(){ sendBtn.classList.remove('flash'); });
+        });
+      });
+    });
+
+    // 5) restart the loop
+    after(9000, cycle);
+  }
+
+  // Only animate while the stage is on screen, to be kind to battery.
+  var running = false;
+  function start(){ if(!running){ running = true; cycle(); } }
+  function stop(){ running = false; clearTimers(); }
+
+  if('IntersectionObserver' in window){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ e.isIntersecting ? start() : stop(); });
+    }, {threshold:0.25});
+    io.observe(stage);
+  } else {
+    start();
+  }
+})();
+</script>
+</body>
+</html>
