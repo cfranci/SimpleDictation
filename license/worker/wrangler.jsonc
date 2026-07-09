@@ -20,6 +20,12 @@
   "account_id": "d044293fa72b226f3efd250447a870fe", // API KING
   "observability": { "enabled": true },
 
+  // Scheduled jobs (see worker.js scheduled handler + docs/CRONS.md):
+  //   hourly  -> sweep rate_limits + low-inventory key alert
+  //   0 13 UTC (09:00 ET) -> daily redemption digest
+  // Email jobs no-op until RESEND_API_KEY + ALERT_EMAIL secrets are set.
+  "triggers": { "crons": ["0 * * * *", "0 13 * * *"] },
+
   "d1_databases": [
     {
       "binding": "DB",

@@ -114,3 +114,21 @@ cd SimpleDictation
 git pull
 ./build.sh
 ```
+
+## Repository layout
+
+```
+Sources/            The macOS app (Swift/AppKit). LicenseManager + Base32 live here too.
+site/               Marketing site (index.html, buy.html) + assets/. Deploys to GitHub Pages.
+license/            The license-key backend, one subsystem:
+  worker/           Cloudflare Worker + D1 schema + wrangler config (deploys to API KING).
+  admin/            keys.html, the admin console to view/manage the key database.
+  scripts/          gen-keys.mjs, the Ed25519 keygen + batch generator.
+  keys/  dist/       Generated key material and batches. GITIGNORED, never committed.
+docs/               Planning + ops docs. See docs/README.md for the index.
+build.sh            Build + launch the app locally.
+build-dmg.sh        Assemble the distributable DMG.
+project.yml         XcodeGen project definition (app target = Sources/).
+```
+
+The app (`Sources/`, `build.sh`, `project.yml`) and the license backend (`license/`) are independent: building the app never touches the backend, and deploying the backend never touches the app.

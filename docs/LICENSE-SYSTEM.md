@@ -4,25 +4,25 @@ A self-issued license backend for the Reddit giveaway and Stripe buyers. No Lemo
 
 ## Architecture (5 lines)
 
-1. `scripts/gen-keys.mjs` mints an Ed25519 keypair and seeds D1 with short codes (`SD42-XXXX-XXXX-XXXX`), one row per key. It never signs tokens.
+1. `license/scripts/gen-keys.mjs` mints an Ed25519 keypair and seeds D1 with short codes (`SD42-XXXX-XXXX-XXXX`), one row per key. It never signs tokens.
 2. A Cloudflare Worker (`simpledictation-licenses`, account API KING) holds the private key as a secret and owns a D1 database (also `simpledictation-licenses`) that is the source of truth for every key.
 3. The user pastes a short code once. The app POSTs it to `POST /v1/activate`; the Worker looks it up by `code_canon`, enforces `activation_count < max_activations`, records the device, and mints a fresh Ed25519 token `SD1-<base32(payload)>.<base32(sig)>`.
 4. The app verifies that token offline forever with the embedded public key (`Sources/LicenseManager.swift`). One network call in the app's entire life.
-5. `admin/keys.html` is a single-file console over the Worker's `/admin` endpoints for listing, generating, revoking, and exporting keys.
+5. `license/admin/keys.html` is a single-file console over the Worker's `/admin` endpoints for listing, generating, revoking, and exporting keys.
 
 The canonical token payload is `{ v, kid, sku, email, order, iid }` with `kid = "sd-2026-07"`, `sku = "simpledictation"`, `v = 1`, and for self-issued keys `order == iid == the short code`. Default `max_activations` is 2 (laptop plus desktop).
 
 ## Regenerate the 100 keys
 
 ```bash
-node scripts/gen-keys.mjs --self-test         # prove mint/verify/tamper before trusting a batch
-node scripts/gen-keys.mjs --batch reddit-launch --tier pro --count 100
+node license/scripts/gen-keys.mjs --self-test         # prove mint/verify/tamper before trusting a batch
+node license/scripts/gen-keys.mjs --batch reddit-launch --tier pro --count 100
 ```
 
 This writes three gitignored files under `dist/`:
 
-- `dist/reddit-keys.txt` the 100 plain codes to paste into Reddit.
-- `dist/seed.sql` the D1 INSERTs (codes only, columns match `worker/schema.sql`).
+- `license/dist/reddit-keys.txt` the 100 plain codes to paste into Reddit.
+- `license/dist/seed.sql` the D1 INSERTs (codes only, columns match `license/worker/schema.sql`).
 - `dist/keys.jsonl` audit trail and backup.
 
 The generator also prints two values:
@@ -36,7 +36,7 @@ Run these from the repo root. Use the API KING Cloudflare API token.
 
 ```bash
 export CLOUDFLARE_API_TOKEN=<the API KING token>
-cd worker
+cd license/worker
 
 # 1. Create the D1 database, then paste the printed database_id into wrangler.jsonc (database_id field).
 npx wrangler d1 create simpledictation-licenses
@@ -62,7 +62,7 @@ npx wrangler deploy
 After deploy, confirm the printed URL matches `LicenseManager.workerBaseURL`
 (`https://simpledictation-licenses.api-king.workers.dev`). If Cloudflare gives a different
 subdomain, update that constant in `Sources/LicenseManager.swift` and the gate default in
-`admin/keys.html`.
+`license/admin/keys.html`.
 
 Quick sanity checks:
 
@@ -74,7 +74,7 @@ npx wrangler d1 execute simpledictation-licenses --remote \
 
 ## Operate the admin page
 
-1. Open `admin/keys.html` in a browser (double-click the file, or serve it from the same origin as the Worker to avoid CORS).
+1. Open `license/admin/keys.html` in a browser (double-click the file, or serve it from the same origin as the Worker to avoid CORS).
 2. Confirm the Worker base URL (defaults to `https://simpledictation-licenses.api-king.workers.dev`).
 3. Paste the `ADMIN_TOKEN` you set above and click Unlock. The token is held in this tab only (sessionStorage); Lock wipes it.
 

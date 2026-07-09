@@ -430,7 +430,64 @@ async function handleAdminExport(env, url, cors) {
 }
 
 // ---------- entry ----------
+// ---------- scheduled jobs (Cloudflare Cron Triggers) ----------
+// All email is gated on RESEND_API_KEY + ALERT_EMAIL: with neither set these
+// no-op safely, so the crons can ship dark and be switched on with a secret.
+
+async function sweepRateLimits(env) {
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(`DELETE FROM rate_limits WHERE expires_at < ?`).bind(now).run();
+}
+
+async function sendEmail(env, subject, text) {
+  if (!env.RESEND_API_KEY || !env.ALERT_EMAIL) return false; // not configured -> no-op
+  const from = env.ALERT_FROM || 'SimpleDictation <onboarding@resend.dev>';
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to: [env.ALERT_EMAIL], subject, text }),
+  });
+  return r.ok;
+}
+
+async function keyCounts(env) {
+  return env.DB.prepare(
+    `SELECT COUNT(*) AS total,
+            SUM(CASE WHEN status='unused'  THEN 1 ELSE 0 END) AS unused,
+            SUM(CASE WHEN status='active'  THEN 1 ELSE 0 END) AS active,
+            SUM(CASE WHEN status='revoked' THEN 1 ELSE 0 END) AS revoked
+       FROM licenses`).first();
+}
+
+async function lowKeyAlert(env) {
+  const c = await keyCounts(env);
+  const threshold = parseInt(env.LOW_KEY_THRESHOLD || '10', 10);
+  if ((c?.unused ?? 0) <= threshold) {
+    await sendEmail(env, `SimpleDictation: only ${c?.unused ?? 0} license keys left`,
+      `Unused keys are down to ${c?.unused ?? 0} of ${c?.total ?? 0}. Generate more in the admin page (Generate more) or edit the Reddit post before they run out.`);
+  }
+}
+
+async function dailyDigest(env) {
+  const c = await keyCounts(env);
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const recent = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM activations WHERE outcome='activated' AND created_at >= ?`).bind(since).first();
+  await sendEmail(env, `SimpleDictation daily: ${recent?.n ?? 0} redeemed, ${c?.unused ?? 0} left`,
+    `Last 24h new activations: ${recent?.n ?? 0}\nUnused: ${c?.unused ?? 0}\nActive: ${c?.active ?? 0}\nRevoked: ${c?.revoked ?? 0}\nTotal: ${c?.total ?? 0}`);
+}
+
+async function runScheduled(event, env) {
+  await sweepRateLimits(env);                             // always: keep rate_limits tidy
+  if ((event.cron || '') === '0 13 * * *') await dailyDigest(env);  // 09:00 ET digest
+  else await lowKeyAlert(env);                            // hourly: low-inventory alert
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runScheduled(event, env));
+  },
+
   async fetch(req, env) {
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
