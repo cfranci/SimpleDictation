@@ -8,3 +8,9 @@ DerivedData/
 .swiftpm/
 SimpleDictation-*.zip
 SimpleDictation-*.dmg
+
+# License key material + generated artifacts — never commit (public repo)
+keys/
+dist/keys.jsonl
+dist/reddit-keys.txt
+dist/seed.sql

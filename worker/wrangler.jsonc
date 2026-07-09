@@ -1,0 +1,42 @@
+{
+  // SimpleDictation license Worker -- Cloudflare account "API KING".
+  //
+  // Deploy (from this worker/ dir), after: export CLOUDFLARE_API_TOKEN=<the API KING token>
+  //   npx wrangler d1 create simpledictation-licenses   # paste the printed id into database_id below
+  //   npx wrangler d1 execute simpledictation-licenses --file schema.sql --remote
+  //   npx wrangler d1 execute simpledictation-licenses --file ../dist/seed.sql --remote
+  //   npx wrangler secret put ED25519_PRIVATE_KEY_B64    # base32 of the PKCS8 DER from gen-keys.mjs
+  //   npx wrangler secret put ADMIN_TOKEN                # openssl rand -base64 32
+  //   npx wrangler deploy
+  //
+  // The two secrets above (ED25519_PRIVATE_KEY_B64, ADMIN_TOKEN) are set with
+  // `wrangler secret put` and are NEVER committed. IP_SALT and PUBLIC_KEY are
+  // optional secrets (see worker.js header).
+
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "simpledictation-licenses",
+  "main": "worker.js",
+  "compatibility_date": "2025-01-01",
+  "account_id": "d044293fa72b226f3efd250447a870fe", // API KING
+  "observability": { "enabled": true },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "simpledictation-licenses",
+      "database_id": "PASTE_D1_DATABASE_ID_HERE" // from `npx wrangler d1 create` output
+    }
+  ],
+
+  // Public vars only. Secrets (ED25519_PRIVATE_KEY_B64, ADMIN_TOKEN, IP_SALT,
+  // optional PUBLIC_KEY) are set with `wrangler secret put` and NEVER committed.
+  "vars": {
+    "KID": "sd-2026-07",
+    "SKU": "simpledictation",
+    // Allowed BROWSER origins for CORS. The site is GitHub Pages
+    // (cfranci.github.io/SimpleDictation). The native macOS app sends no Origin
+    // header, so /v1/activate from the app is unaffected.
+    "ALLOWED_ORIGINS": "https://cfranci.github.io,http://localhost:8788,http://127.0.0.1:8788",
+    "RATE_LIMIT_PER_MIN": "8"
+  }
+}

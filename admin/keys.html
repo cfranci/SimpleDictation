@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex,nofollow" />
+<title>SimpleDictation License Admin</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0c0b0d; --card:#18151b; --card-2:#1e1a22; --line:#2a2530; --line-2:#3a3342;
+    --ink:#f4eef2; --muted:#a79fb0; --muted-2:#7c7488;
+    --accent:#ff7a3d; --accent-2:#ff4d2e; --accent-glow:rgba(255,90,44,.55);
+    --good:#43d6a0; --warn:#ffb454; --bad:#ff5a5a; --radius:18px;
+    --shadow:0 24px 70px -24px rgba(0,0,0,.75);
+  }
+  html{-webkit-font-smoothing:antialiased}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 600px at 50% -10%, #1b1418 0%, var(--bg) 55%) no-repeat, var(--bg);
+    color:var(--ink); min-height:100vh; padding:28px 20px 64px; line-height:1.5;
+  }
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1180px;margin:0 auto}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .grow{flex:1 1 auto}
+  h1{font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px}
+  h1 .dot{width:11px;height:11px;border-radius:50%;background:radial-gradient(circle at 40% 35%,var(--accent),var(--accent-2))}
+  .muted{color:var(--muted)}
+  .btn{
+    display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-2);
+    background:var(--card-2);color:var(--ink);border-radius:11px;padding:9px 14px;
+    font-size:14px;font-weight:600;cursor:pointer;transition:transform .1s ease,border-color .1s ease;
+  }
+  .btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn.primary{
+    border:none;color:#1a0f08;background:linear-gradient(180deg,var(--accent),var(--accent-2));
+    box-shadow:0 8px 24px -8px var(--accent-glow);
+  }
+  .btn.ghost{background:transparent}
+  .btn.sm{padding:5px 10px;font-size:12.5px;border-radius:8px}
+  input,select{
+    font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line-2);
+    border-radius:11px;padding:9px 12px;outline:none;
+  }
+  input:focus,select:focus{border-color:var(--accent)}
+  input::placeholder{color:var(--muted-2)}
+  .card{
+    background:linear-gradient(180deg,var(--card-2),var(--card));border:1px solid var(--line);
+    border-radius:var(--radius);box-shadow:var(--shadow);
+  }
+
+  /* Gate */
+  #gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg);z-index:50}
+  #gate .card{width:100%;max-width:460px;padding:30px}
+  #gate h1{margin-bottom:6px}
+  #gate .g-field{margin-top:16px}
+  #gate label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+  #gate input{width:100%}
+  #gate .btn{width:100%;justify-content:center;margin-top:18px}
+  #gate .err{color:var(--bad);font-size:13px;margin-top:12px;min-height:18px}
+
+  /* App */
+  #app{display:none}
+  .topbar{margin-bottom:22px}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:20px 0}
+  .stat{padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:700;letter-spacing:-.02em}
+  .stat .l{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+  .stat .n.good{color:var(--good)} .stat .n.accent{color:var(--accent)}
+
+  .controls{padding:14px 16px;margin-bottom:16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .controls input#q{min-width:200px}
+
+  .tablewrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:760px}
+  thead th{
+    text-align:left;padding:12px 14px;background:var(--card-2);color:var(--muted);
+    font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;
+    border-bottom:1px solid var(--line-2);white-space:nowrap;
+  }
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+  .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
+  .pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;text-transform:capitalize}
+  .pill.unused{background:rgba(167,159,176,.16);color:var(--muted)}
+  .pill.active{background:rgba(67,214,160,.16);color:var(--good)}
+  .pill.revoked{background:rgba(255,90,90,.16);color:var(--bad)}
+  .seat{display:inline-flex;align-items:center;gap:8px}
+  .seat .bar{width:52px;height:6px;border-radius:3px;background:var(--line-2);overflow:hidden}
+  .seat .bar i{display:block;height:100%;background:var(--good)}
+  .seat.full .bar i{background:var(--warn)}
+  .dim{color:var(--muted-2)}
+  .empty{padding:40px;text-align:center;color:var(--muted)}
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--card-2);border:1px solid var(--line-2);color:var(--ink);
+    padding:11px 18px;border-radius:12px;font-size:13.5px;box-shadow:var(--shadow);
+    opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;z-index:80;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  @media (max-width:820px){
+    .cards{grid-template-columns:repeat(2,1fr)}
+    table{min-width:0}
+    thead{display:none}
+    tbody tr{display:block;border:1px solid var(--line);border-radius:14px;margin-bottom:12px;padding:6px 4px;background:var(--card)}
+    tbody td{display:flex;justify-content:space-between;gap:16px;border:none;padding:8px 14px}
+    tbody td::before{content:attr(data-label);color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+    .tablewrap{border:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- ====================== GATE ====================== -->
+<div id="gate">
+  <div class="card">
+    <h1><span class="dot"></span> License Admin</h1>
+    <p class="muted" style="font-size:13.5px;margin-top:6px">Paste the ADMIN_TOKEN to open the console. It is held in this tab only (sessionStorage) and never sent anywhere but the Worker.</p>
+    <div class="g-field">
+      <label for="gWorker">Worker base URL</label>
+      <input id="gWorker" type="text" spellcheck="false" autocomplete="off" placeholder="https://simpledictation-licenses.api-king.workers.dev" />
+    </div>
+    <div class="g-field">
+      <label for="gToken">ADMIN_TOKEN</label>
+      <input id="gToken" type="password" spellcheck="false" autocomplete="off" placeholder="Bearer token" />
+    </div>
+    <button class="btn primary" id="gUnlock">Unlock</button>
+    <div class="err" id="gErr"></div>
+  </div>
+</div>
+
+<!-- ====================== APP ====================== -->
+<div id="app">
+  <div class="wrap">
+    <div class="topbar row">
+      <h1 class="grow"><span class="dot"></span> SimpleDictation Licenses</h1>
+      <button class="btn ghost sm" id="btnRefresh">Refresh</button>
+      <button class="btn ghost sm" id="btnLock">Lock</button>
+    </div>
+
+    <div class="cards">
+      <div class="card stat"><div class="n" id="sTotal">-</div><div class="l">Total keys</div></div>
+      <div class="card stat"><div class="n accent" id="sActive">-</div><div class="l">Redeemed</div></div>
+      <div class="card stat"><div class="n good" id="sUnused">-</div><div class="l">Unused left</div></div>
+      <div class="card stat"><div class="n" id="sRevoked">-</div><div class="l">Revoked</div></div>
+    </div>
+
+    <div class="card controls">
+      <input id="q" type="text" placeholder="Search code / email / note" />
+      <select id="fStatus">
+        <option value="all">All statuses</option>
+        <option value="unused">Unused</option>
+        <option value="active">Active</option>
+        <option value="revoked">Revoked</option>
+      </select>
+      <select id="fBatch"><option value="all">All batches</option></select>
+      <span class="grow"></span>
+      <button class="btn sm" id="btnCopyUnused">Copy unused as Reddit list</button>
+      <button class="btn sm" id="btnCsv">Export CSV</button>
+      <button class="btn primary sm" id="btnGenerate">Generate N more</button>
+    </div>
+
+    <div class="tablewrap card">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th><th>Status</th><th>Batch</th><th>Activations</th>
+            <th>Email</th><th>Activated</th><th>Created</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none">No keys match.</div>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin-top:14px">Freeing / revoking a key only stops FUTURE activations. A Mac that already holds a signed offline token keeps working; there is no server-side kill switch by design.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+// -------- config: default Worker base URL (operator can override at the gate) --------
+const DEFAULT_WORKER_BASE = "https://simpledictation-licenses.api-king.workers.dev";
+
+// -------- state --------
+let BASE = "";
+let TOKEN = "";
+let ALL = [];        // full key list from the Worker
+
+// -------- tiny helpers --------
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+  ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2200);
+}
+function fmtDate(v) {
+  if (!v) return "";
+  let d;
+  if (/^\d+$/.test(String(v))) d = new Date(parseInt(v, 10) * 1000);
+  else d = new Date(v);
+  if (isNaN(d.getTime())) return esc(v);
+  return d.toISOString().slice(0, 10);
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (_) {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (_) {}
+    document.body.removeChild(ta); return ok;
+  }
+}
+
+// -------- API --------
+async function api(path, opts = {}) {
+  const res = await fetch(BASE + path, {
+    ...opts,
+    headers: { "Authorization": "Bearer " + TOKEN, ...(opts.headers || {}) },
+  });
+  return res;
+}
+
+// -------- gate --------
+function showGate(msg) {
+  $("app").style.display = "none";
+  $("gate").style.display = "flex";
+  $("gErr").textContent = msg || "";
+  $("gWorker").value = sessionStorage.getItem("sd_worker") || DEFAULT_WORKER_BASE;
+}
+function openApp() { $("gate").style.display = "none"; $("app").style.display = "block"; }
+
+async function unlock(worker, token) {
+  BASE = (worker || DEFAULT_WORKER_BASE).replace(/\/+$/, "");
+  TOKEN = token;
+  const res = await api("/admin/keys?per_page=1000");
+  if (res.status === 401) { showGate("Token rejected (401). Check the ADMIN_TOKEN."); return; }
+  if (!res.ok) {
+    showGate("Could not reach the Worker (" + res.status + "). Check the URL, and that admin CORS allows this page.");
+    return;
+  }
+  sessionStorage.setItem("sd_worker", BASE);
+  sessionStorage.setItem("sd_token", TOKEN);
+  openApp();
+  const data = await res.json();
+  ingest(data);
+}
+
+function lock() {
+  sessionStorage.removeItem("sd_token");
+  TOKEN = "";
+  showGate("Locked.");
+}
+
+// -------- data --------
+function ingest(data) {
+  ALL = data.keys || [];
+  // batch filter options
+  const sel = $("fBatch"), cur = sel.value;
+  const batches = data.batches || [...new Set(ALL.map((k) => k.batch))].sort();
+  sel.innerHTML = '<option value="all">All batches</option>' +
+    batches.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
+  sel.value = batches.includes(cur) ? cur : "all";
+  render();
+}
+
+async function reload() {
+  const res = await api("/admin/keys?per_page=1000");
+  if (res.status === 401) return showGate("Session expired. Re-enter the token.");
+  if (!res.ok) return toast("Reload failed (" + res.status + ")");
+  ingest(await res.json());
+}
+
+function filtered() {
+  const q = $("q").value.trim().toLowerCase();
+  const st = $("fStatus").value;
+  const ba = $("fBatch").value;
+  return ALL.filter((k) => {
+    if (st !== "all" && k.status !== st) return false;
+    if (ba !== "all" && k.batch !== ba) return false;
+    if (q) {
+      const hay = (k.code + " " + (k.email || "") + " " + (k.note || "")).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function render() {
+  // summary counts (from full set, not filtered)
+  const total = ALL.length;
+  const active = ALL.filter((k) => k.status === "active").length;
+  const unused = ALL.filter((k) => k.status === "unused").length;
+  const revoked = ALL.filter((k) => k.status === "revoked").length;
+  $("sTotal").textContent = total;
+  $("sActive").textContent = active;
+  $("sUnused").textContent = unused;
+  $("sRevoked").textContent = revoked;
+
+  const rows = filtered();
+  const tb = $("rows");
+  $("empty").style.display = rows.length ? "none" : "block";
+  tb.innerHTML = rows.map((k) => {
+    const used = k.activation_count || 0;
+    const max = k.max_activations || 0;
+    const pct = max ? Math.min(100, Math.round((used / max) * 100)) : 0;
+    const full = max && used >= max;
+    return `<tr data-id="${esc(k.id)}">
+      <td data-label="Code"><span class="code">${esc(k.code)}</span></td>
+      <td data-label="Status"><span class="pill ${esc(k.status)}">${esc(k.status)}</span></td>
+      <td data-label="Batch">${esc(k.batch)}</td>
+      <td data-label="Activations"><span class="seat ${full ? "full" : ""}">
+        <span class="bar"><i style="width:${pct}%"></i></span>${used}/${max}</span></td>
+      <td data-label="Email">${k.email ? esc(k.email) : '<span class="dim">-</span>'}</td>
+      <td data-label="Activated">${k.activated_at ? fmtDate(k.activated_at) : '<span class="dim">-</span>'}</td>
+      <td data-label="Created">${fmtDate(k.created_at)}</td>
+      <td data-label="" style="text-align:right;white-space:nowrap">
+        <button class="btn sm ghost" data-act="copy">Copy</button>
+        ${k.status === "revoked"
+          ? `<button class="btn sm ghost" data-act="unrevoke">Restore</button>`
+          : `<button class="btn sm ghost" data-act="revoke">Revoke</button>`}
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+// -------- row actions (delegated) --------
+$("rows").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const tr = btn.closest("tr");
+  const id = tr.getAttribute("data-id");
+  const rec = ALL.find((k) => k.id === id);
+  const act = btn.getAttribute("data-act");
+
+  if (act === "copy") {
+    const ok = await copyText(rec.code);
+    toast(ok ? "Copied " + rec.code : "Copy failed");
+    return;
+  }
+  if (act === "revoke") {
+    if (!confirm("Revoke " + rec.code + "?\n\nThis stops FUTURE activations. A Mac already holding a signed token keeps working (no server-side kill switch by design).")) return;
+    const res = await api("/admin/keys/" + encodeURIComponent(id) + "/revoke", { method: "POST" });
+    if (!res.ok) return toast("Revoke failed (" + res.status + ")");
+    toast("Revoked " + rec.code); reload();
+    return;
+  }
+  if (act === "unrevoke") {
+    const res = await api("/admin/keys/" + encodeURIComponent(id) + "/unrevoke", { method: "POST" });
+    if (!res.ok) return toast("Restore failed (" + res.status + ")");
+    toast("Restored " + rec.code); reload();
+    return;
+  }
+});
+
+// -------- toolbar actions --------
+$("btnRefresh").addEventListener("click", reload);
+$("btnLock").addEventListener("click", lock);
+$("q").addEventListener("input", render);
+$("fStatus").addEventListener("change", render);
+$("fBatch").addEventListener("change", render);
+
+$("btnCopyUnused").addEventListener("click", async () => {
+  const list = ALL.filter((k) => k.status === "unused").map((k) => k.code).join("\n");
+  if (!list) return toast("No unused keys to copy");
+  const ok = await copyText(list);
+  toast(ok ? "Copied all unused keys" : "Copy failed");
+});
+
+$("btnCsv").addEventListener("click", async () => {
+  const st = $("fStatus").value, ba = $("fBatch").value;
+  const qs = new URLSearchParams();
+  if (st !== "all") qs.set("status", st);
+  if (ba !== "all") qs.set("batch", ba);
+  const res = await api("/admin/export.csv" + (qs.toString() ? "?" + qs : ""));
+  if (!res.ok) return toast("Export failed (" + res.status + ")");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "simpledictation-keys.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast("CSV downloaded");
+});
+
+$("btnGenerate").addEventListener("click", async () => {
+  const nStr = prompt("How many new keys to generate?", "25");
+  if (nStr == null) return;
+  const n = parseInt(nStr, 10);
+  if (!n || n < 1) return toast("Enter a positive number");
+  const batch = prompt("Batch name for these keys:", "reddit-launch");
+  if (batch == null) return;
+  const res = await api("/admin/keys/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ n, batch }),
+  });
+  if (!res.ok) return toast("Generate failed (" + res.status + ")");
+  const data = await res.json();
+  toast("Generated " + (data.created || n) + " keys");
+  reload();
+});
+
+// -------- gate wiring + silent re-auth --------
+$("gUnlock").addEventListener("click", () => {
+  const w = $("gWorker").value.trim();
+  const t = $("gToken").value.trim();
+  if (!t) { $("gErr").textContent = "Enter the ADMIN_TOKEN."; return; }
+  unlock(w, t);
+});
+$("gToken").addEventListener("keydown", (e) => { if (e.key === "Enter") $("gUnlock").click(); });
+
+(function boot() {
+  const savedToken = sessionStorage.getItem("sd_token");
+  const savedWorker = sessionStorage.getItem("sd_worker");
+  if (savedToken) { unlock(savedWorker, savedToken); }   // silent re-auth on reload
+  else { showGate(); }
+})();
+</script>
+</body>
+</html>

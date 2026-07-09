@@ -13,7 +13,7 @@ Requires macOS 14.0 or later.
 1. You hold down the **fn** key (or option key)
 2. Talk into your mic
 3. Release the key
-4. The text gets typed out wherever your cursor is -- chat boxes, text editors, search bars, anywhere
+4. The text gets pasted wherever your cursor is -- chat boxes, text editors, search bars, anywhere
 
 Double-tap the key to press Enter (submits forms, sends messages).
 
