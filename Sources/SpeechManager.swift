@@ -71,6 +71,18 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     private var recognitionTask: SFSpeechRecognitionTask?
     private var audioEngine: AVAudioEngine?
 
+    // Parallel Apple recognizer used ONLY to drive the live caption overlay when
+    // the paste engine is Whisper/Moonshine (which don't stream word-by-word).
+    // It reads the same mic buffers; it never types or pastes anything.
+    private var captionRecognizer: SFSpeechRecognizer?
+    private var captionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var captionTask: SFSpeechRecognitionTask?
+    /// (text, isFinal) streamed live for captions.
+    var onCaptionText: ((String, Bool) -> Void)?
+    private var captionsEnabled: Bool {
+        UserDefaults.standard.object(forKey: "captionEnabled") as? Bool ?? true
+    }
+
     // Whisper state — only available on macOS 14+
     private var _whisperManager: AnyObject?
     private var _moonshineManager: AnyObject?
@@ -124,6 +136,63 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: currentLocale))
             speechRecognizer?.delegate = self
         }
+    }
+
+    // MARK: - Live caption recognizer (parallel, non-Apple engines)
+
+    /// Start a lightweight Apple recognizer purely to stream live caption text
+    /// while Whisper/Moonshine capture audio for the actual transcription.
+    private func startCaptionRecognizer() {
+        guard captionsEnabled, isAuthorized else {
+            slog("Caption recognizer skipped (captionsEnabled=\(captionsEnabled) authorized=\(isAuthorized))")
+            return
+        }
+        stopCaptionRecognizer()
+
+        let recognizer = SFSpeechRecognizer(locale: Locale(identifier: currentLocale))
+        guard let recognizer = recognizer, recognizer.isAvailable else {
+            slog("Caption recognizer unavailable")
+            return
+        }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        // Match VNOCH: allow server fallback so partials stream smoothly
+        // word-by-word (on-device tends to deliver delayed/chunky results).
+        request.requiresOnDeviceRecognition = false
+        request.addsPunctuation = true
+        captionRecognizer = recognizer
+        captionRequest = request
+        slog("Caption recognizer started (server-allowed, punctuation on)")
+        captionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self = self else { return }
+            if let result = result {
+                let text = result.bestTranscription.formattedString
+                if !text.isEmpty {
+                    self.slog("CaptionLive(final=\(result.isFinal ? 1 : 0)): \(text)")
+                    self.onCaptionText?(text, result.isFinal)
+                }
+            }
+            if let error = error {
+                self.slog("CaptionLive error: \(error.localizedDescription)")
+            }
+            if error != nil || (result?.isFinal ?? false) {
+                // Task finished; buffers are no longer needed.
+            }
+        }
+        NSLog("[SimpleDictation] Caption recognizer started (onDevice=%d)", recognizer.supportsOnDeviceRecognition)
+    }
+
+    /// Append a raw mic buffer to the caption recognizer (called from the tap).
+    private func feedCaptionBuffer(_ buffer: AVAudioPCMBuffer) {
+        captionRequest?.append(buffer)
+    }
+
+    private func stopCaptionRecognizer() {
+        captionRequest?.endAudio()
+        captionTask?.cancel()
+        captionTask = nil
+        captionRequest = nil
+        captionRecognizer = nil
     }
 
     func checkAuthorization() {
@@ -400,6 +469,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     }
 
     func stopRecording() {
+        // Tear down the parallel caption recognizer for every engine path.
+        stopCaptionRecognizer()
         if #available(macOS 14, *) {
             if isMoonshineEngine {
                 stopMoonshineRecording()
@@ -613,6 +684,9 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
 
+            // Feed the parallel live-caption recognizer with the raw mic buffer.
+            self.feedCaptionBuffer(buffer)
+
             // Audio level
             if let channelData = buffer.floatChannelData?[0] {
                 let frames = Int(buffer.frameLength)
@@ -660,6 +734,9 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
 
         isRecording = true
+
+        // Stream live captions in parallel (Whisper itself only produces text on stop).
+        startCaptionRecognizer()
 
         // Incremental transcription every 5 seconds (only when incremental mode is on)
         if incrementalMode {
@@ -858,6 +935,9 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
 
+            // Feed the parallel live-caption recognizer with the raw mic buffer.
+            self.feedCaptionBuffer(buffer)
+
             if let channelData = buffer.floatChannelData?[0] {
                 let frames = Int(buffer.frameLength)
                 let rms = sqrt((0..<frames).reduce(Float(0)) { $0 + channelData[$1] * channelData[$1] } / Float(frames))
@@ -903,6 +983,9 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
 
         isRecording = true
+
+        // Stream live captions in parallel (Moonshine only produces text on stop).
+        startCaptionRecognizer()
 
         // Incremental transcription every 5 seconds (only when incremental mode is on)
         if incrementalMode {

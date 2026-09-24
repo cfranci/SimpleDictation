@@ -31,6 +31,7 @@ targets:
         PRODUCT_NAME: SimpleDictation
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "SimpleDictation needs microphone access for speech-to-text dictation."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "SimpleDictation needs speech recognition to convert your voice to text."
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: "SimpleDictation pauses your media players (or mutes sound) while you dictate."
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
         INFOPLIST_KEY_CFBundleIconFile: AppIcon

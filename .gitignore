@@ -13,3 +13,6 @@ SimpleDictation-*.dmg
 license/keys/
 license/dist/
 node_modules/
+
+# Local AI tooling state
+.grok/

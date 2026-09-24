@@ -1,5 +1,6 @@
 import Cocoa
 import Combine
+import UniformTypeIdentifiers
 
 class StatusBarController: NSObject {
     private(set) var statusItem: NSStatusItem!
@@ -321,6 +322,110 @@ class StatusBarController: NSObject {
         cycleItem.tag = 800
         cycleItem.state = UserDefaults.standard.bool(forKey: "clipboardCyclingEnabled") ? .on : .off
         menu.addItem(cycleItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Pause media / mute sound while dictating
+        let pauseHeader = NSMenuItem(title: "While Dictating:", action: nil, keyEquivalent: "")
+        pauseHeader.isEnabled = false
+        menu.addItem(pauseHeader)
+
+        let pauseToggle = NSMenuItem(title: "Pause Media / Sound", action: #selector(togglePauseMedia), keyEquivalent: "")
+        pauseToggle.target = self
+        pauseToggle.tag = 900
+        pauseToggle.state = MediaController.shared.enabled ? .on : .off
+        menu.addItem(pauseToggle)
+
+        let methodSubmenu = NSMenu()
+        let pauseAppsItem = NSMenuItem(title: "Pause Media Players", action: #selector(setPauseMethod(_:)), keyEquivalent: "")
+        pauseAppsItem.target = self
+        pauseAppsItem.representedObject = "pauseApps" as NSString
+        methodSubmenu.addItem(pauseAppsItem)
+        let muteItem = NSMenuItem(title: "Mute All Sound", action: #selector(setPauseMethod(_:)), keyEquivalent: "")
+        muteItem.target = self
+        muteItem.representedObject = "muteSystem" as NSString
+        methodSubmenu.addItem(muteItem)
+        let methodItem = NSMenuItem(title: "Method", action: nil, keyEquivalent: "")
+        methodItem.tag = 910
+        methodItem.submenu = methodSubmenu
+        menu.addItem(methodItem)
+
+        let appsItem = NSMenuItem(title: "Apps to Pause", action: nil, keyEquivalent: "")
+        appsItem.tag = 920
+        appsItem.submenu = NSMenu()
+        menu.addItem(appsItem)
+
+        updatePauseMethodMenu()
+        updatePauseAppsMenu()
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Live captions across the screen with the active cursor
+        let capHeader = NSMenuItem(title: "Live Captions:", action: nil, keyEquivalent: "")
+        capHeader.isEnabled = false
+        menu.addItem(capHeader)
+
+        let capToggle = NSMenuItem(title: "Show Live Captions", action: #selector(toggleCaptions), keyEquivalent: "")
+        capToggle.target = self
+        capToggle.tag = 930
+        capToggle.state = CaptionOverlayController.shared.enabled ? .on : .off
+        menu.addItem(capToggle)
+
+        let capSizeSub = NSMenu()
+        for s in [8, 10, 12, 14, 18, 24, 32, 40, 52, 64] {
+            let it = NSMenuItem(title: "\(s)px", action: #selector(setCaptionFontSize(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = s as NSNumber
+            capSizeSub.addItem(it)
+        }
+        let capSizeItem = NSMenuItem(title: "Font Size", action: nil, keyEquivalent: "")
+        capSizeItem.tag = 940
+        capSizeItem.submenu = capSizeSub
+        menu.addItem(capSizeItem)
+
+        let capPosSub = NSMenu()
+        let capTop = NSMenuItem(title: "Top", action: #selector(setCaptionPosition(_:)), keyEquivalent: "")
+        capTop.target = self; capTop.representedObject = "top" as NSString
+        capPosSub.addItem(capTop)
+        let capBottom = NSMenuItem(title: "Bottom", action: #selector(setCaptionPosition(_:)), keyEquivalent: "")
+        capBottom.target = self; capBottom.representedObject = "bottom" as NSString
+        capPosSub.addItem(capBottom)
+        let capPosItem = NSMenuItem(title: "Position", action: nil, keyEquivalent: "")
+        capPosItem.tag = 950
+        capPosItem.submenu = capPosSub
+        menu.addItem(capPosItem)
+
+        let capAlignSub = NSMenu()
+        for (title, value) in [("Left", "left"), ("Center", "center"), ("Right", "right")] {
+            let it = NSMenuItem(title: title, action: #selector(setCaptionAlignment(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = value as NSString
+            capAlignSub.addItem(it)
+        }
+        let capAlignItem = NSMenuItem(title: "Alignment", action: nil, keyEquivalent: "")
+        capAlignItem.tag = 960
+        capAlignItem.submenu = capAlignSub
+        menu.addItem(capAlignItem)
+
+        let capBgItem = NSMenuItem(title: "Background", action: #selector(toggleCaptionBackground), keyEquivalent: "")
+        capBgItem.target = self
+        capBgItem.tag = 970
+        capBgItem.state = CaptionOverlayController.shared.showBackground ? .on : .off
+        menu.addItem(capBgItem)
+
+        let capOpacitySub = NSMenu()
+        for pct in [100, 85, 72, 55, 40, 25, 10] {
+            let it = NSMenuItem(title: "\(pct)%", action: #selector(setCaptionOpacity(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = pct as NSNumber
+            capOpacitySub.addItem(it)
+        }
+        let capOpacityItem = NSMenuItem(title: "Translucency", action: nil, keyEquivalent: "")
+        capOpacityItem.tag = 980
+        capOpacityItem.submenu = capOpacitySub
+        menu.addItem(capOpacityItem)
+
+        updateCaptionMenus()
 
         menu.addItem(NSMenuItem.separator())
 
@@ -674,6 +779,167 @@ class StatusBarController: NSObject {
             item.state = newValue ? .on : .off
         }
         onClipboardCyclingChanged?(newValue)
+    }
+
+    // MARK: - Pause Media / Mute While Dictating
+
+    @objc private func togglePauseMedia() {
+        MediaController.shared.enabled.toggle()
+        if let item = menu.item(withTag: 900) {
+            item.state = MediaController.shared.enabled ? .on : .off
+        }
+    }
+
+    @objc private func setPauseMethod(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let method = MediaController.Method(rawValue: raw) else { return }
+        MediaController.shared.method = method
+        updatePauseMethodMenu()
+        updatePauseAppsMenu()
+    }
+
+    private func updatePauseMethodMenu() {
+        guard let methodItem = menu.item(withTag: 910), let sub = methodItem.submenu else { return }
+        let current = MediaController.shared.method.rawValue
+        for item in sub.items {
+            if let raw = item.representedObject as? String {
+                item.state = raw == current ? .on : .off
+            }
+        }
+        methodItem.title = MediaController.shared.method == .muteSystem
+            ? "Method: Mute All Sound" : "Method: Pause Players"
+    }
+
+    private func updatePauseAppsMenu() {
+        guard let appsItem = menu.item(withTag: 920), let sub = appsItem.submenu else { return }
+        sub.removeAllItems()
+
+        let enabled = MediaController.shared.apps
+        var all = MediaController.commonApps
+        for app in enabled where !all.contains(app) { all.append(app) }
+
+        for app in all {
+            let item = NSMenuItem(title: app, action: #selector(togglePauseApp(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = app as NSString
+            item.state = enabled.contains(app) ? .on : .off
+            sub.addItem(item)
+        }
+        sub.addItem(NSMenuItem.separator())
+        let addItem = NSMenuItem(title: "Add App…", action: #selector(addPauseApp), keyEquivalent: "")
+        addItem.target = self
+        sub.addItem(addItem)
+
+        // Only relevant when pausing players (mute mode covers everything).
+        appsItem.isEnabled = MediaController.shared.method == .pauseApps
+    }
+
+    @objc private func togglePauseApp(_ sender: NSMenuItem) {
+        guard let app = sender.representedObject as? String else { return }
+        var list = MediaController.shared.apps
+        if list.contains(app) {
+            list.removeAll { $0 == app }
+        } else {
+            list.append(app)
+        }
+        MediaController.shared.apps = list
+        updatePauseAppsMenu()
+    }
+
+    @objc private func addPauseApp() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a media app to pause while dictating"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let name = url.deletingPathExtension().lastPathComponent
+        var list = MediaController.shared.apps
+        if !list.contains(name) { list.append(name) }
+        MediaController.shared.apps = list
+        updatePauseAppsMenu()
+    }
+
+    // MARK: - Live Captions
+
+    @objc private func toggleCaptions() {
+        CaptionOverlayController.shared.enabled.toggle()
+        if let item = menu.item(withTag: 930) {
+            item.state = CaptionOverlayController.shared.enabled ? .on : .off
+        }
+    }
+
+    @objc private func setCaptionFontSize(_ sender: NSMenuItem) {
+        guard let size = sender.representedObject as? NSNumber else { return }
+        CaptionOverlayController.shared.fontSize = CGFloat(size.intValue)
+        updateCaptionMenus()
+        CaptionOverlayController.shared.preview()
+    }
+
+    @objc private func setCaptionPosition(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        CaptionOverlayController.shared.position = value
+        updateCaptionMenus()
+        CaptionOverlayController.shared.preview()
+    }
+
+    @objc private func setCaptionAlignment(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        CaptionOverlayController.shared.alignment = value
+        updateCaptionMenus()
+        CaptionOverlayController.shared.preview()
+    }
+
+    @objc private func toggleCaptionBackground() {
+        CaptionOverlayController.shared.showBackground.toggle()
+        updateCaptionMenus()
+        CaptionOverlayController.shared.preview()
+    }
+
+    @objc private func setCaptionOpacity(_ sender: NSMenuItem) {
+        guard let pct = sender.representedObject as? NSNumber else { return }
+        // Choosing a translucency level implies you want a background.
+        CaptionOverlayController.shared.showBackground = true
+        CaptionOverlayController.shared.backgroundOpacity = Double(pct.intValue) / 100.0
+        updateCaptionMenus()
+        CaptionOverlayController.shared.preview()
+    }
+
+    private func updateCaptionMenus() {
+        let cap = CaptionOverlayController.shared
+        if let sizeItem = menu.item(withTag: 940), let sub = sizeItem.submenu {
+            for it in sub.items {
+                if let s = it.representedObject as? NSNumber {
+                    it.state = Int(cap.fontSize) == s.intValue ? .on : .off
+                }
+            }
+            sizeItem.title = "Font Size: \(Int(cap.fontSize))px"
+        }
+        if let posItem = menu.item(withTag: 950), let sub = posItem.submenu {
+            for it in sub.items {
+                if let v = it.representedObject as? String { it.state = cap.position == v ? .on : .off }
+            }
+            posItem.title = "Position: \(cap.position.capitalized)"
+        }
+        if let alignItem = menu.item(withTag: 960), let sub = alignItem.submenu {
+            for it in sub.items {
+                if let v = it.representedObject as? String { it.state = cap.alignment == v ? .on : .off }
+            }
+            alignItem.title = "Alignment: \(cap.alignment.capitalized)"
+        }
+        if let bgItem = menu.item(withTag: 970) {
+            bgItem.state = cap.showBackground ? .on : .off
+        }
+        if let opItem = menu.item(withTag: 980), let sub = opItem.submenu {
+            let currentPct = Int((cap.backgroundOpacity * 100).rounded())
+            for it in sub.items {
+                if let p = it.representedObject as? NSNumber { it.state = p.intValue == currentPct ? .on : .off }
+            }
+            opItem.title = "Translucency: \(currentPct)%"
+            opItem.isEnabled = cap.showBackground
+        }
     }
     
     @objc private func restartApp() {
