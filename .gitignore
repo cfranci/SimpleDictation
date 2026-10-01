@@ -16,3 +16,9 @@ node_modules/
 
 # Local AI tooling state
 .grok/
+
+# Icon generator intermediates (keep tools/make_icon.py, drop its renders)
+tools/icon.html
+tools/icon.svg
+tools/icon_1024.png
+tools/AppIcon.iconset/

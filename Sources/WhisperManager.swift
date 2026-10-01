@@ -86,27 +86,54 @@ class WhisperManager {
         }
     }
 
-    /// Check if a model is available locally (already downloaded).
-    /// WhisperKit uses ~/Library/Caches/ or the HF hub cache.
+    /// Root folder WhisperKit actually downloads its CoreML models into.
+    static var modelStoreRoot: String {
+        NSHomeDirectory() + "/Documents/huggingface/models/argmaxinc/whisperkit-coreml"
+    }
+
+    /// On-disk folder for a specific model variant.
+    func modelDirectory(_ model: Model) -> String {
+        WhisperManager.modelStoreRoot + "/" + model.whisperKitModel
+    }
+
+    /// Check if a model is available locally (already downloaded). WhisperKit
+    /// stores models under ~/Documents/huggingface/models/argmaxinc/whisperkit-coreml
+    /// — NOT the HF hub cache — so we look there for the compiled CoreML bundles.
     func isModelLocal(_ model: Model) -> Bool {
+        if loadedModel == model && whisperKit != nil { return true }
         let fm = FileManager.default
-        // WhisperKit stores models under huggingface hub cache
-        let hubCache = NSHomeDirectory() + "/.cache/huggingface/hub"
-        let modelName = "models--argmaxinc--whisperkit-coreml"
-        let modelDir = hubCache + "/" + modelName
-        if fm.fileExists(atPath: modelDir) {
-            // Check for the specific model variant in snapshots
-            if let snapshots = try? fm.contentsOfDirectory(atPath: modelDir + "/snapshots") {
-                for snap in snapshots {
-                    let variantPath = modelDir + "/snapshots/" + snap + "/" + model.whisperKitModel
-                    if fm.fileExists(atPath: variantPath) {
-                        return true
-                    }
-                }
-            }
+        let dir = modelDirectory(model)
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else { return false }
+        // A complete model has the compiled .mlmodelc bundles.
+        let contents = (try? fm.contentsOfDirectory(atPath: dir)) ?? []
+        return contents.contains { $0.hasSuffix(".mlmodelc") }
+    }
+
+    /// Every Whisper model currently downloaded on disk.
+    func localModels() -> [Model] {
+        Model.allCases.filter { isModelLocal($0) }
+    }
+
+    /// Delete a downloaded model's folder to reclaim disk. Never deletes the
+    /// model that's currently loaded in memory.
+    @discardableResult
+    func deleteModel(_ model: Model) -> Bool {
+        guard model != loadedModel else { return false }
+        do {
+            try FileManager.default.removeItem(atPath: modelDirectory(model))
+            debugLog("Deleted local model \(model.rawValue)")
+            return true
+        } catch {
+            debugLog("Failed to delete model \(model.rawValue): \(error)")
+            return false
         }
-        // Also check if it's the currently loaded model
-        return loadedModel == model && whisperKit != nil
+    }
+
+    /// Remove every downloaded model except the one to keep — backs the
+    /// "keep only selected model" disk-cleanup option.
+    func pruneOtherModels(keeping keep: Model) {
+        for m in localModels() where m != keep { deleteModel(m) }
     }
 
     func transcribe(samples: [Float], language: String? = nil) async -> String {

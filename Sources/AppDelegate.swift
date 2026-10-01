@@ -46,6 +46,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             CaptionOverlayController.shared.update(text, final: true)
         }
 
+        // Boot into an engine that's actually ready: last model if it's downloaded,
+        // else another downloaded model, else Apple Speech — so it never stalls
+        // trying to fetch a model that isn't on disk.
+        if let ready = speechManager?.readyEngine(preferred: currentEngine), ready != currentEngine {
+            NSLog("[SimpleDictation] Startup engine adjusted: %@ -> %@", currentEngine, ready)
+            currentEngine = ready
+        }
         speechManager?.engineMode = currentEngine
 
         // Model download/loading notifications (macOS 14+ only)
@@ -53,7 +60,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             speechManager?.whisperManager.onModelLoading = { [weak self] (isLoading, model, success) in
                 guard let self = self else { return }
                 if isLoading {
-                    self.showModelNotification("Downloading \(model.displayName)...")
+                    // Already on disk → we're just loading it into memory (~seconds),
+                    // not downloading. Only say "Downloading" on a genuine first fetch.
+                    let verb = self.speechManager?.whisperManager.isModelLocal(model) == true ? "Loading" : "Downloading"
+                    self.showModelNotification("\(verb) \(model.displayName)...")
                     self.statusBarController?.startDownloadFlash(forEngine: model.rawValue)
                     self.floatingWindow?.updateDownloading(true)
                 } else {
@@ -655,6 +665,9 @@ final class CaptionOverlayController {
     private let alignmentKey  = "captionAlignment"   // "left" | "center" | "right"
     private let backgroundKey = "captionBackground"  // Bool — draw the pill or not
     private let opacityKey    = "captionOpacity"     // Double 0…1 — pill translucency
+    private let windowShadowKey = "captionWindowShadow" // Bool — draw the panel's drop shadow
+    private let textColorKey   = "captionTextColor"   // hex string
+    private let textOpacityKey = "captionTextOpacity" // Double 0…1
 
     var enabled: Bool {
         get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
@@ -692,7 +705,26 @@ final class CaptionOverlayController {
         get { UserDefaults.standard.object(forKey: backgroundKey) as? Bool ?? true }
         set {
             UserDefaults.standard.set(newValue, forKey: backgroundKey)
-            onMain { self.applyBackground() }
+            // Re-render text too: the shadow softens when the pill is hidden.
+            onMain { self.applyBackground(); self.applyStyle() }
+        }
+    }
+
+    /// Caption text color (defaults to white).
+    var textColor: NSColor {
+        get { NSColor(hexString: UserDefaults.standard.string(forKey: textColorKey) ?? "#FFFFFF") ?? .white }
+        set {
+            UserDefaults.standard.set(newValue.hexString, forKey: textColorKey)
+            onMain { self.applyStyle() }
+        }
+    }
+
+    /// Caption text opacity, 0…1.
+    var textOpacity: Double {
+        get { UserDefaults.standard.object(forKey: textOpacityKey) as? Double ?? 1.0 }
+        set {
+            UserDefaults.standard.set(newValue, forKey: textOpacityKey)
+            onMain { self.applyStyle() }
         }
     }
 
@@ -702,6 +734,16 @@ final class CaptionOverlayController {
         set {
             UserDefaults.standard.set(newValue, forKey: opacityKey)
             onMain { self.applyBackground() }
+        }
+    }
+
+    /// The panel's own drop shadow — what Chase calls the "shadow window." Turn
+    /// this off (with Background off too) to make the caption pure floating text.
+    var showWindowShadow: Bool {
+        get { UserDefaults.standard.object(forKey: windowShadowKey) as? Bool ?? true }
+        set {
+            UserDefaults.standard.set(newValue, forKey: windowShadowKey)
+            onMain { self.panel?.hasShadow = newValue; self.reposition() }
         }
     }
 
@@ -726,8 +768,11 @@ final class CaptionOverlayController {
     /// Live recognized text as it's spoken. `final` = the engine has committed it.
     /// Text can arrive DURING recording (Apple, streamed word-by-word) or AFTER
     /// the key is released (Whisper/Moonshine, transcribed on stop) — both work.
-    func update(_ text: String, final: Bool = false) {
+    func update(_ rawText: String, final: Bool = false) {
         guard enabled else { return }
+        // Strip sound/scene annotation tokens ([BLANK_AUDIO], [coughing],
+        // (music), ♪ …) so they never flash across the caption bar.
+        let text = SpeechManager.cleanTranscript(rawText)
         guard !text.isEmpty else { return }
         onMain {
             // New text cancels any in-progress fade-out so it's shown solidly.
@@ -885,7 +930,7 @@ final class CaptionOverlayController {
         p.level = .floating
         p.isOpaque = false
         p.backgroundColor = .clear
-        p.hasShadow = true
+        p.hasShadow = showWindowShadow
         p.ignoresMouseEvents = true
         p.isFloatingPanel = true
         p.hidesOnDeactivate = false
@@ -953,12 +998,22 @@ final class CaptionOverlayController {
         let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
 
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.95)
-        shadow.shadowBlurRadius = 4
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        if showBackground {
+            // Over the pill: strong shadow for punch.
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.95)
+            shadow.shadowBlurRadius = 4
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+        } else {
+            // No pill: a subtle shadow, just enough contrast against the screen.
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
+            shadow.shadowBlurRadius = 3
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+        }
 
         lbl.attributedStringValue = NSAttributedString(string: currentText, attributes: [
-            .font: font, .foregroundColor: NSColor.white, .shadow: shadow,
+            .font: font,
+            .foregroundColor: textColor.withAlphaComponent(CGFloat(textOpacity)),
+            .shadow: shadow,
         ])
     }
 
@@ -979,14 +1034,20 @@ final class CaptionOverlayController {
         let textH: CGFloat = ceil(full.height)
 
         let panelW = min(textW + hPad * 2, maxWidth)
-        let panelH = textH + vPad * 2
+        // Vertical padding grows with the font, plus headroom for the text's drop
+        // shadow, so large captions aren't cropped by the pill (the "shadow window").
+        let vpad = max(vPad, ceil(fontSize * 0.22))
+        let shadowRoom: CGFloat = ceil(fontSize * 0.12) + 4
+        let panelH = textH + vpad * 2 + shadowRoom
         let innerW = panelW - hPad * 2
 
         // Right-anchor the text: its right edge sits at the inner right padding;
         // when the text is wider than the pill, labelX goes negative and the
-        // left of the text runs off the edge.
+        // left of the text runs off the edge. Vertically center it so the shadow
+        // has equal room above and below.
         let labelX = hPad + (innerW - textW)
-        lbl.frame = NSRect(x: labelX, y: vPad, width: textW, height: textH)
+        let labelY = (panelH - textH) / 2
+        lbl.frame = NSRect(x: labelX, y: labelY, width: textW, height: textH)
 
         // Horizontal placement. "center" starts centered and expands outward
         // until it hits the hard block; "left"/"right" pin to that edge.

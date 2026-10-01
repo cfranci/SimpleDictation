@@ -300,6 +300,33 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
     }
 
+    // MARK: - Engine readiness
+
+    /// Pick an engine that's ready to go at launch: keep the requested one if its
+    /// model is already downloaded; otherwise fall back to any downloaded Whisper
+    /// model, and finally Apple Speech (always built into macOS). The app never
+    /// boots into a model that isn't on disk.
+    func readyEngine(preferred: String) -> String {
+        if preferred == "apple" { return "apple" }
+        guard #available(macOS 14, *) else { return "apple" }
+        if preferred.hasPrefix("moonshine-") { return preferred }  // bundled, always available
+        let model = whisperModel(for: preferred)
+        if whisperManager.isModelLocal(model) { return preferred }
+        if let firstLocal = whisperManager.localModels().first {
+            slog("Saved engine '\(preferred)' isn't downloaded — defaulting to \(firstLocal.rawValue)")
+            return firstLocal.rawValue
+        }
+        slog("No Whisper model downloaded — defaulting to Apple Speech")
+        return "apple"
+    }
+
+    /// Delete every downloaded model except the currently-selected one.
+    @available(macOS 14, *)
+    func pruneModelsKeepingCurrent() {
+        guard engineMode != "apple", !isMoonshineEngine else { return }
+        whisperManager.pruneOtherModels(keeping: whisperModel(for: engineMode))
+    }
+
     // MARK: - Recording Dispatch
 
     func startRecording() {
@@ -789,9 +816,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             usleep(30000)
         }
 
-        // Paste new full text (pasteText adds trailing space)
+        // Paste new full text. pasteText strips annotations and adds a trailing
+        // space, so track the ACTUAL pasted length (cleaned) — otherwise the next
+        // incremental delete would remove the wrong number of characters.
+        let pastedClean = SpeechManager.cleanTranscript(newText)
         pasteText(newText)
-        whisperPastedCharCount = newText.count + 1 // +1 for the trailing space pasteText adds
+        whisperPastedCharCount = pastedClean.isEmpty ? 0 : pastedClean.count + 1
     }
 
     private func stopWhisperRecording() {
@@ -1108,35 +1138,64 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     // MARK: - Paste
 
+    /// Strip non-speech annotation tokens that Whisper/Apple emit as literal text
+    /// — e.g. "[BLANK_AUDIO]", "[coughing]", "(upbeat music)", "♪", arrows — so
+    /// they never get pasted or shown. Returns the cleaned, whitespace-collapsed
+    /// string; empty means "nothing worth pasting." Idempotent.
+    static func cleanTranscript(_ text: String) -> String {
+        var s = text
+        // Anything wrapped in [ ], ( ), or < > is a sound/scene annotation.
+        for pattern in ["\\[[^\\]]*\\]", "\\([^\\)]*\\)", "<[^>]*>"] {
+            s = s.replacingOccurrences(of: pattern, with: " ", options: .regularExpression)
+        }
+        // Musical-note and arrow glyphs that captioning models sprinkle in.
+        s = s.replacingOccurrences(of: "[♪♫♬➤➜→⟶►◄«»]", with: " ", options: .regularExpression)
+        // Collapse the whitespace the removals leave behind.
+        s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func pasteText(_ text: String) {
+        let cleaned = SpeechManager.cleanTranscript(text)
+        guard !cleaned.isEmpty else {
+            slog("pasteText: nothing to paste after stripping annotations from '\(text)'")
+            return
+        }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        let textToPaste = text + " "
+        let textToPaste = cleaned + " "
         pasteboard.setString(textToPaste, forType: .string)
 
         usleep(50000)
 
         let src = CGEventSource(stateID: .hidSystemState)
 
+        // Every synthetic key event is tagged so the ClipboardCycler tap passes
+        // it through instead of treating our own paste as a user Cmd+V (which
+        // would suppress repeat pastes — the "transcribes but doesn't paste" bug).
         let cmdDown = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: true)
         cmdDown?.flags = .maskCommand
+        cmdDown?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
         cmdDown?.post(tap: .cghidEventTap)
 
         usleep(50000)
 
         let vDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true)
         vDown?.flags = .maskCommand
+        vDown?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
         vDown?.post(tap: .cghidEventTap)
 
         usleep(50000)
 
         let vUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
         vUp?.flags = .maskCommand
+        vUp?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
         vUp?.post(tap: .cghidEventTap)
 
         usleep(50000)
 
         let cmdUp = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: false)
+        cmdUp?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
         cmdUp?.post(tap: .cghidEventTap)
     }
 }

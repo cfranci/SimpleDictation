@@ -242,6 +242,8 @@ class FloatingMicWindow: NSPanel {
         audioLevelTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self, let sm = self.speechManager, let view = self.micView, view.isRecording else { return }
             view.audioLevel = CGFloat(sm.audioLevel)
+            view.effectPhase = (view.effectPhase + 0.18 * DotSettings.speed.multiplier)
+                .truncatingRemainder(dividingBy: 2 * .pi)
             view.needsDisplay = true
         }
     }
@@ -266,6 +268,7 @@ class MicPillView: NSView {
     /// 0 = not spinning, 0..1 = expanding out from main dot, 1 = orbiting, 1..2 = finishing orbit back to start
     var spinnerPhase: CGFloat = 0
     var audioLevel: CGFloat = 0
+    var effectPhase: CGFloat = 0        // drives the multicolor recording animation
     var engineLabel: String = "SR"
     var isHovering = false
     var onLeftClick: (() -> Void)?
@@ -333,23 +336,30 @@ class MicPillView: NSView {
         let path = NSBezierPath(ovalIn: circleRect)
 
         if isRecording {
-            NSColor(red: 1.0, green: 0.15, blue: 0.15, alpha: 1.0).setFill()
-        } else if isProcessing {
-            NSColor(white: 0.15, alpha: 0.35).setFill()
-        } else {
-            let bgAlpha: CGFloat = isHovering ? 0.45 : 0.25
-            NSColor(white: 0.15, alpha: bgAlpha).setFill()
-        }
-        path.fill()
-
-        if isRecording {
+            // Multicolor animated indicator (MenuBarBuddy-style effect).
+            let style = DotSettings.style
+            let (topColor, _) = DotEffect.colors(style: style, phase: effectPhase, customHue: DotSettings.customHue)
+            if let img = DotEffect.image(style: style, motions: DotSettings.motions, phase: effectPhase,
+                                         customHue: DotSettings.customHue, size: circleSize) {
+                img.draw(in: circleRect)
+            } else {
+                topColor.setFill(); path.fill()
+            }
+            // Audio-reactive ring in the style's leading tone.
             let level = min(max(audioLevel, 0), 1.0)
             let ringWidth: CGFloat = 2.0 + 3.0 * level
             let ringRect = circleRect.insetBy(dx: -ringWidth, dy: -ringWidth)
             let ringPath = NSBezierPath(ovalIn: ringRect)
             ringPath.lineWidth = ringWidth
-            NSColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 0.4 + 0.6 * level).setStroke()
+            topColor.withAlphaComponent(0.4 + 0.6 * level).setStroke()
             ringPath.stroke()
+        } else if isProcessing {
+            NSColor(white: 0.15, alpha: 0.35).setFill()
+            path.fill()
+        } else {
+            let bgAlpha: CGFloat = isHovering ? 0.45 : 0.25
+            NSColor(white: 0.15, alpha: bgAlpha).setFill()
+            path.fill()
         }
 
         // Spinner: small dot orbiting the circle (red = processing, blue = downloading)
@@ -402,42 +412,44 @@ class MicPillView: NSView {
         let cy = circleRect.midY
         let scale = circleSize / 40.0
 
-        if isRecording {
-            NSColor.white.setFill()
-            NSColor.white.setStroke()
-        } else {
-            let iconAlpha: CGFloat = isHovering ? 0.6 : 0.25
-            NSColor(white: 0.75, alpha: iconAlpha).setFill()
-            NSColor(white: 0.75, alpha: iconAlpha).setStroke()
+        if DotSettings.showMicSymbol {
+            if isRecording {
+                NSColor.white.setFill()
+                NSColor.white.setStroke()
+            } else {
+                let iconAlpha: CGFloat = isHovering ? 0.6 : 0.25
+                NSColor(white: 0.75, alpha: iconAlpha).setFill()
+                NSColor(white: 0.75, alpha: iconAlpha).setStroke()
+            }
+
+            let lw = max(1.0, 1.5 * scale)
+            let micW: CGFloat = 8 * scale
+            let micH: CGFloat = 14 * scale
+            let micRect = NSRect(x: cx - micW / 2, y: cy - 1 * scale, width: micW, height: micH)
+            let micPath = NSBezierPath(roundedRect: micRect, xRadius: micW / 2, yRadius: micW / 2)
+            micPath.fill()
+
+            let arcPath = NSBezierPath()
+            arcPath.lineWidth = lw
+            let arcRadius: CGFloat = 7 * scale
+            let arcCenterY = cy + 3 * scale
+            arcPath.appendArc(withCenter: NSPoint(x: cx, y: arcCenterY),
+                              radius: arcRadius,
+                              startAngle: 200, endAngle: 340)
+            arcPath.stroke()
+
+            let standPath = NSBezierPath()
+            standPath.lineWidth = lw
+            standPath.move(to: NSPoint(x: cx, y: arcCenterY - arcRadius))
+            standPath.line(to: NSPoint(x: cx, y: cy - 10 * scale))
+            standPath.stroke()
+
+            let basePath = NSBezierPath()
+            basePath.lineWidth = lw
+            basePath.move(to: NSPoint(x: cx - 5 * scale, y: cy - 10 * scale))
+            basePath.line(to: NSPoint(x: cx + 5 * scale, y: cy - 10 * scale))
+            basePath.stroke()
         }
-
-        let lw = max(1.0, 1.5 * scale)
-        let micW: CGFloat = 8 * scale
-        let micH: CGFloat = 14 * scale
-        let micRect = NSRect(x: cx - micW / 2, y: cy - 1 * scale, width: micW, height: micH)
-        let micPath = NSBezierPath(roundedRect: micRect, xRadius: micW / 2, yRadius: micW / 2)
-        micPath.fill()
-
-        let arcPath = NSBezierPath()
-        arcPath.lineWidth = lw
-        let arcRadius: CGFloat = 7 * scale
-        let arcCenterY = cy + 3 * scale
-        arcPath.appendArc(withCenter: NSPoint(x: cx, y: arcCenterY),
-                          radius: arcRadius,
-                          startAngle: 200, endAngle: 340)
-        arcPath.stroke()
-
-        let standPath = NSBezierPath()
-        standPath.lineWidth = lw
-        standPath.move(to: NSPoint(x: cx, y: arcCenterY - arcRadius))
-        standPath.line(to: NSPoint(x: cx, y: cy - 10 * scale))
-        standPath.stroke()
-
-        let basePath = NSBezierPath()
-        basePath.lineWidth = lw
-        basePath.move(to: NSPoint(x: cx - 5 * scale, y: cy - 10 * scale))
-        basePath.line(to: NSPoint(x: cx + 5 * scale, y: cy - 10 * scale))
-        basePath.stroke()
 
         if isHovering && !isRecording {
             let labelRect = NSRect(x: 0, y: 0, width: bounds.width, height: labelHeight)

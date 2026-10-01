@@ -284,6 +284,12 @@ class StatusBarController: NSObject {
             moonTinyItem.target = self
             moonTinyItem.tag = 608
             menu.addItem(moonTinyItem)
+
+            let keepOnlyItem = NSMenuItem(title: "Keep Only Selected Model", action: #selector(toggleKeepOnlySelectedModel), keyEquivalent: "")
+            keepOnlyItem.target = self
+            keepOnlyItem.tag = 290
+            keepOnlyItem.state = UserDefaults.standard.bool(forKey: "keepOnlySelectedModel") ? .on : .off
+            menu.addItem(keepOnlyItem)
         }
 
         menu.addItem(NSMenuItem.separator())
@@ -413,6 +419,12 @@ class StatusBarController: NSObject {
         capBgItem.state = CaptionOverlayController.shared.showBackground ? .on : .off
         menu.addItem(capBgItem)
 
+        let capShadowItem = NSMenuItem(title: "Shadow Window", action: #selector(toggleCaptionWindowShadow), keyEquivalent: "")
+        capShadowItem.target = self
+        capShadowItem.tag = 975
+        capShadowItem.state = CaptionOverlayController.shared.showWindowShadow ? .on : .off
+        menu.addItem(capShadowItem)
+
         let capOpacitySub = NSMenu()
         for pct in [100, 85, 72, 55, 40, 25, 10] {
             let it = NSMenuItem(title: "\(pct)%", action: #selector(setCaptionOpacity(_:)), keyEquivalent: "")
@@ -450,6 +462,10 @@ class StatusBarController: NSObject {
         menu.addItem(resetBarItem)
 
         menu.addItem(NSMenuItem.separator())
+
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         let restartItem = NSMenuItem(title: "Restart", action: #selector(restartApp), keyEquivalent: "r")
         restartItem.target = self
@@ -574,6 +590,19 @@ class StatusBarController: NSObject {
             break
         }
         onEngineChanged?(currentEngine)
+
+        // If "keep only selected model" is on, reclaim disk from the others.
+        if #available(macOS 14, *), UserDefaults.standard.bool(forKey: "keepOnlySelectedModel") {
+            speechManager.pruneModelsKeepingCurrent()
+        }
+    }
+
+    @objc private func toggleKeepOnlySelectedModel() {
+        let key = "keepOnlySelectedModel"
+        let now = !UserDefaults.standard.bool(forKey: key)
+        UserDefaults.standard.set(now, forKey: key)
+        if let item = menu.item(withTag: 290) { item.state = now ? .on : .off }
+        if now, #available(macOS 14, *) { speechManager.pruneModelsKeepingCurrent() }
     }
 
     private var downloadFlashTimer: Timer?
@@ -898,6 +927,12 @@ class StatusBarController: NSObject {
         CaptionOverlayController.shared.preview()
     }
 
+    @objc private func toggleCaptionWindowShadow() {
+        CaptionOverlayController.shared.showWindowShadow.toggle()
+        updateCaptionMenus()
+        CaptionOverlayController.shared.preview()
+    }
+
     @objc private func setCaptionOpacity(_ sender: NSMenuItem) {
         guard let pct = sender.representedObject as? NSNumber else { return }
         // Choosing a translucency level implies you want a background.
@@ -932,6 +967,9 @@ class StatusBarController: NSObject {
         if let bgItem = menu.item(withTag: 970) {
             bgItem.state = cap.showBackground ? .on : .off
         }
+        if let shadowItem = menu.item(withTag: 975) {
+            shadowItem.state = cap.showWindowShadow ? .on : .off
+        }
         if let opItem = menu.item(withTag: 980), let sub = opItem.submenu {
             let currentPct = Int((cap.backgroundOpacity * 100).rounded())
             for it in sub.items {
@@ -949,6 +987,10 @@ class StatusBarController: NSObject {
         task.arguments = ["-c", "sleep 1 && open \"\(bundlePath)\""]
         try? task.run()
         NSApp.terminate(nil)
+    }
+
+    @objc private func openSettings() {
+        SettingsWindowController.shared.show()
     }
 
     @objc private func quitApp() {

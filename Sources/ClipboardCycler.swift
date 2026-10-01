@@ -1,5 +1,11 @@
 import Cocoa
 
+/// Shared tag stamped on the app's own synthetic key events (via
+/// `.eventSourceUserData`) so the ClipboardCycler's tap can recognize and pass
+/// through pastes SimpleDictation generates itself — instead of mistaking them
+/// for a user Cmd+V and swallowing repeat pastes.
+let kSyntheticEventMarker: Int64 = 0x434C4950
+
 /// Intercepts Cmd+V system-wide to enable clipboard history cycling.
 /// First Cmd+V pastes normally. While Cmd is still held, each subsequent V press
 /// undoes the previous paste and replaces it with the next item from clipboard history.
@@ -11,7 +17,7 @@ class ClipboardCycler {
     private var isCycling = false
     private var suppressNextVUp = false
     private var lastPastedLength: Int = 0
-    private let syntheticMarker: Int64 = 0x434C4950
+    private let syntheticMarker: Int64 = kSyntheticEventMarker
     var enabled: Bool = false  // off by default until user enables
 
     var getClipboardHistory: (() -> [String])?
