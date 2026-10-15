@@ -222,6 +222,7 @@ class FloatingMicWindow: NSPanel {
         let label: String
         switch engineMode {
         case "apple": label = "SR"
+        case "whistle": label = "WH"
         case "whisper-tiny": label = "W-T"
         case "whisper-base": label = "W-B"
         case "whisper-small": label = "W-S"

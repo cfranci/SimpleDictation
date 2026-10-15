@@ -93,6 +93,10 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         return _whisperManager as! WhisperManager
     }
 
+    /// Cactus Whistle on-device engine (bundled .cact, CPU-only).
+    let whistleManager = WhistleManager()
+    var isWhistleEngine: Bool { engineMode == "whistle" }
+
     @available(macOS 14, *)
     var moonshineManager: MoonshineManager {
         if _moonshineManager == nil { _moonshineManager = MoonshineManager() }
@@ -308,6 +312,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     /// boots into a model that isn't on disk.
     func readyEngine(preferred: String) -> String {
         if preferred == "apple" { return "apple" }
+        if preferred == "whistle" { return "whistle" }  // bundled .cact, always available
         guard #available(macOS 14, *) else { return "apple" }
         if preferred.hasPrefix("moonshine-") { return preferred }  // bundled, always available
         let model = whisperModel(for: preferred)
@@ -331,6 +336,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     func startRecording() {
         slog("startRecording: engineMode=\(engineMode)")
+        if isWhistleEngine { startWhistleRecording(); return }
         if #available(macOS 14, *) {
             if isMoonshineEngine {
                 startMoonshineRecording()
@@ -498,6 +504,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     func stopRecording() {
         // Tear down the parallel caption recognizer for every engine path.
         stopCaptionRecognizer()
+        if isWhistleEngine { stopWhistleRecording(); return }
         if #available(macOS 14, *) {
             if isMoonshineEngine {
                 stopMoonshineRecording()
@@ -686,6 +693,67 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             }
             await MainActor.run {
                 self.startWhisperAudioCapture()
+            }
+        }
+    }
+
+    // MARK: - Whistle (Cactus Needle on-device engine)
+
+    private func startWhistleRecording() {
+        hasPasted = false
+        recognizedText = ""
+        recordingStartTime = Date()
+        whisperSamples = []
+        whisperPastedCharCount = 0
+        isIncrementalTranscribing = false
+        whisperSessionID &+= 1
+        stopWhisperRecordingInternal()
+        if selectedMicID != 0 { setInputDevice(selectedMicID) }
+        // Load whistle.cact (idempotent) off-main, then start the shared 16 kHz capture.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = self.whistleManager.load()
+            DispatchQueue.main.async {
+                guard ok else { NSLog("[SimpleDictation] Failed to load Whistle model"); return }
+                self.startWhisperAudioCapture()
+            }
+        }
+    }
+
+    private func stopWhistleRecording() {
+        whisperTimer?.invalidate()
+        whisperTimer = nil
+        let hadEngine = audioEngine != nil
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine = nil
+        isRecording = false
+        guard hadEngine else { return }
+
+        let samples = whisperSamples
+        guard samples.count > 8000 else {
+            NSLog("[SimpleDictation] Whistle: too few samples (%d)", samples.count)
+            return
+        }
+
+        isProcessing = true
+        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
+            guard let self = self else { return }
+            let text = self.whistleManager.transcribe(samples: samples, language: nil)
+            DispatchQueue.main.async {
+                guard !text.isEmpty, !self.isSilenceHallucination(text) else {
+                    self.isProcessing = false
+                    return
+                }
+                self.recognizedText = text
+                NSLog("[SimpleDictation] Whistle final: %@", text)
+                DispatchQueue.global(qos: .userInteractive).async {
+                    self.pasteText(text)
+                    usleep(100000)
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(SpeechManager.cleanTranscript(text), forType: .string)
+                    DispatchQueue.main.async { self.isProcessing = false }
+                }
             }
         }
     }

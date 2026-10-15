@@ -21,6 +21,8 @@ targets:
       - Sources
       - path: AppIcon.icns
         buildPhase: resources
+      - path: Resources/whistle.cact
+        buildPhase: resources
     dependencies:
       - package: WhisperKit
       - package: Moonshine
@@ -44,5 +46,10 @@ targets:
         CODE_SIGNING_ALLOWED: YES
         LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
         ENABLE_HARDENED_RUNTIME: NO
+        # Cactus Needle / Whistle on-device STT engine (static C++ lib + C header)
+        SWIFT_OBJC_BRIDGING_HEADER: Vendor/Needle/NeedleBridge.h
+        HEADER_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/Vendor/Needle"]
+        LIBRARY_SEARCH_PATHS: ["$(inherited)", "$(SRCROOT)/Vendor/Needle"]
+        OTHER_LDFLAGS: ["$(inherited)", "-lneedle", "-lc++"]
     entitlements:
       path: SimpleDictation.entitlements

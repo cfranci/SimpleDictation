@@ -238,6 +238,12 @@ class StatusBarController: NSObject {
         appleItem.tag = 601
         menu.addItem(appleItem)
 
+        // Whistle (Cactus Needle) — bundled, on-device, works on any macOS
+        let whistleItem = NSMenuItem(title: "Whistle (17MB, on-device)", action: #selector(setEngine(_:)), keyEquivalent: "")
+        whistleItem.target = self
+        whistleItem.tag = 611
+        menu.addItem(whistleItem)
+
         // Whisper & Moonshine engines — macOS 14+ only
         if #available(macOS 14, *) {
             let whisperTinyItem = NSMenuItem(title: "Whisper Tiny (~40MB)", action: #selector(setEngine(_:)), keyEquivalent: "")
@@ -568,6 +574,8 @@ class StatusBarController: NSObject {
         switch sender.tag {
         case 601:
             currentEngine = "apple"
+        case 611:
+            currentEngine = "whistle"
         case 602:
             currentEngine = "whisper-tiny"
         case 603:
@@ -612,6 +620,7 @@ class StatusBarController: NSObject {
     private func updateEngineMenu() {
         let engineMap: [(tag: Int, mode: String, whisperModel: WhisperManager.Model?)] = [
             (601, "apple", nil),
+            (611, "whistle", nil),       // bundled Cactus Whistle, no download
             (602, "whisper-tiny", .tiny),
             (603, "whisper-base", .base),
             (604, "whisper-small", .small),
