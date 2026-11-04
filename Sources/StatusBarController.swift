@@ -130,14 +130,47 @@ class StatusBarController: NSObject {
     private func updateStatusIcon() {
         if let button = statusItem.button {
             if !isEnabled {
+                stopDotAnimation()
                 button.image = NSImage(systemSymbolName: "minus.circle", accessibilityDescription: "Disabled")
                 button.image?.isTemplate = true
             } else if isRecording {
-                button.image = createRecordingImage()
+                // Same animated multicolor dot as the floating bubble.
+                startDotAnimation()
             } else {
+                stopDotAnimation()
                 button.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "SimpleDictation")
                 button.image?.isTemplate = true
             }
+        }
+    }
+
+    // MARK: - Menu-bar dot animation (mirrors FloatingMicWindow)
+
+    private var dotPhase: CGFloat = 0
+    private var dotAnimTimer: Timer?
+
+    private func startDotAnimation() {
+        guard dotAnimTimer == nil else { return }
+        renderDotFrame()   // show a frame immediately
+        dotAnimTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.dotPhase += 0.18 * DotSettings.speed.multiplier
+            self.renderDotFrame()
+        }
+    }
+
+    private func stopDotAnimation() {
+        dotAnimTimer?.invalidate()
+        dotAnimTimer = nil
+    }
+
+    private func renderDotFrame() {
+        guard let button = statusItem?.button else { return }
+        if let img = DotEffect.image(style: DotSettings.style, motions: DotSettings.motions,
+                                     phase: dotPhase, customHue: DotSettings.customHue,
+                                     size: 18, opacity: DotSettings.opacity) {
+            img.isTemplate = false   // colorful, not a template glyph
+            button.image = img
         }
     }
 

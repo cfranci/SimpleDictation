@@ -230,199 +230,276 @@ struct DotPreview: View {
     }
 }
 
-// MARK: - Tabbed settings
+// MARK: - Stepped settings (one major setting per page)
 
-struct SettingsView: View {
-    @ObservedObject var store: DictationSettingsStore
+enum SettingPageID: String, CaseIterable, Identifiable {
+    case engine, microphone, language
+    case triggerMode, triggerKeys
+    case indicator, captions
+    case incremental, clipboard, media
 
-    var body: some View {
-        TabView {
-            RecognitionTab(store: store)
-                .tabItem { Label("Recognition", systemImage: "waveform") }
-            ShortcutsTab(store: store)
-                .tabItem { Label("Shortcuts", systemImage: "command") }
-            IndicatorTab(store: store)
-                .tabItem { Label("Indicator", systemImage: "circle.hexagongrid.fill") }
-            CaptionsTab(store: store)
-                .tabItem { Label("Captions", systemImage: "captions.bubble") }
-            BehaviorTab(store: store)
-                .tabItem { Label("Behavior", systemImage: "slider.horizontal.3") }
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .engine:       return "Engine"
+        case .microphone:   return "Microphone"
+        case .language:     return "Language"
+        case .triggerMode:  return "Trigger mode"
+        case .triggerKeys:  return "Trigger keys"
+        case .indicator:    return "Indicator"
+        case .captions:     return "Captions"
+        case .incremental:  return "Paste as you speak"
+        case .clipboard:    return "Clipboard cycling"
+        case .media:        return "Pause media"
         }
-        .frame(width: 520, height: 600)
-        .onAppear { store.speechManager?.refreshMicList() }
+    }
+
+    var icon: String {
+        switch self {
+        case .engine:       return "cpu"
+        case .microphone:   return "mic.fill"
+        case .language:     return "globe"
+        case .triggerMode:  return "hand.tap.fill"
+        case .triggerKeys:  return "keyboard"
+        case .indicator:    return "circle.hexagongrid.fill"
+        case .captions:     return "captions.bubble.fill"
+        case .incremental:  return "text.cursor"
+        case .clipboard:    return "doc.on.clipboard.fill"
+        case .media:        return "speaker.slash.fill"
+        }
     }
 }
 
-private struct RecognitionTab: View {
-    @ObservedObject var store: DictationSettingsStore
+/// A clean, centered page that explains and hosts exactly one setting.
+struct SettingPage<Content: View>: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    @ViewBuilder var content: Content
+
     var body: some View {
-        Form {
-            Section {
-                Toggle("Dictation enabled", isOn: $store.appEnabled)
-            }
-            Section("Engine") {
-                Picker("Engine", selection: $store.engine) {
-                    ForEach(EngineCatalog.available, id: \.id) { Text($0.title).tag($0.id) }
+        VStack(spacing: 16) {
+            Spacer(minLength: 20)
+            Image(systemName: icon)
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(Color.accentColor)
+            Text(title).font(.system(size: 26, weight: .bold))
+                .multilineTextAlignment(.center)
+            Text(subtitle)
+                .font(.callout).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 440)
+                .fixedSize(horizontal: false, vertical: true)
+            content
+                .frame(maxWidth: 460)
+                .padding(.top, 8)
+            Spacer(minLength: 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 36)
+    }
+}
+
+struct SettingsView: View {
+    @ObservedObject var store: DictationSettingsStore
+    @State private var selection: SettingPageID = .engine
+    @State private var showLargeModels = false
+
+    private let order = SettingPageID.allCases
+
+    var body: some View {
+        NavigationSplitView {
+            List(selection: $selection) {
+                Section("Recognition") {
+                    row(.engine); row(.microphone); row(.language)
                 }
-                Text(EngineCatalog.blurb(for: store.engine))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if #available(macOS 14, *) {
-                    Toggle("Keep only the selected model (reclaim disk from others)", isOn: $store.keepOnlyModel)
+                Section("Input") {
+                    row(.triggerMode); row(.triggerKeys)
                 }
-                Toggle("Incremental mode (paste as you speak)", isOn: $store.incrementalMode)
+                Section("Feedback") {
+                    row(.indicator); row(.captions)
+                }
+                Section("Extras") {
+                    row(.incremental); row(.clipboard); row(.media)
+                }
             }
-            Section("Language") {
-                Picker("Language", selection: $store.locale) {
-                    ForEach(SpeechManager.supportedLocales.indices, id: \.self) { i in
-                        Text(SpeechManager.supportedLocales[i].name).tag(SpeechManager.supportedLocales[i].id)
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 184, ideal: 196, max: 220)
+        } detail: {
+            VStack(spacing: 0) {
+                page(selection)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                stepBar
+            }
+        }
+        .frame(width: 780, height: 560)
+        .onAppear { store.speechManager?.refreshMicList() }
+    }
+
+    private func row(_ id: SettingPageID) -> some View {
+        Label(id.title, systemImage: id.icon).tag(id)
+    }
+
+    private var stepBar: some View {
+        let idx = order.firstIndex(of: selection) ?? 0
+        return HStack {
+            Button { if idx > 0 { selection = order[idx - 1] } } label: {
+                Label("Previous", systemImage: "chevron.left")
+            }.disabled(idx == 0)
+            Spacer()
+            Text("\(idx + 1) of \(order.count)").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+            Button { if idx < order.count - 1 { selection = order[idx + 1] } } label: {
+                Label("Next", systemImage: "chevron.right").labelStyle(.titleAndIcon)
+            }.disabled(idx == order.count - 1)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+    }
+
+    @ViewBuilder
+    private func page(_ id: SettingPageID) -> some View {
+        switch id {
+        case .engine:
+            SettingPage(icon: id.icon, title: "Dictation engine",
+                        subtitle: "The on-device model that turns your voice into text. Your audio never leaves your Mac.") {
+                VStack(spacing: 10) {
+                    ScrollView { EngineChooser(store: store, showLarge: $showLargeModels) }
+                        .frame(maxHeight: 300)
+                    if #available(macOS 14, *) {
+                        Toggle("Keep only the selected model (reclaim disk)", isOn: $store.keepOnlyModel)
+                            .font(.callout)
                     }
                 }
             }
-            Section("Microphone") {
+        case .microphone:
+            SettingPage(icon: id.icon, title: "Microphone",
+                        subtitle: "Choose which microphone to listen to while you dictate.") {
                 HStack {
-                    Picker("Input", selection: $store.micID) {
+                    Picker("", selection: $store.micID) {
                         if store.mics.isEmpty { Text("No microphones found").tag(AudioDeviceID(0)) }
                         ForEach(store.mics) { Text($0.name).tag($0.id) }
-                    }
+                    }.labelsHidden()
                     Button { store.speechManager?.refreshMicList(); store.objectWillChange.send() } label: {
                         Image(systemName: "arrow.clockwise")
                     }.help("Refresh microphone list")
                 }
             }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-private struct ShortcutsTab: View {
-    @ObservedObject var store: DictationSettingsStore
-    var body: some View {
-        Form {
-            Section("Trigger mode") {
-                Picker("Mode", selection: $store.triggerMode) {
+        case .language:
+            SettingPage(icon: id.icon, title: "Language",
+                        subtitle: "The language you'll speak in.") {
+                Picker("", selection: $store.locale) {
+                    ForEach(SpeechManager.supportedLocales.indices, id: \.self) { i in
+                        Text(SpeechManager.supportedLocales[i].name).tag(SpeechManager.supportedLocales[i].id)
+                    }
+                }.labelsHidden()
+            }
+        case .triggerMode:
+            SettingPage(icon: id.icon, title: "Trigger mode",
+                        subtitle: store.triggerMode == "toggle"
+                        ? "Hands-free: triple-tap a trigger key to start listening, single tap to stop, double-tap for Return."
+                        : "Hold a trigger key while you speak, release to type. Double-tap for Return.") {
+                Picker("", selection: $store.triggerMode) {
                     Text("Hold to talk").tag("hold")
                     Text("Hands-free").tag("toggle")
-                }.pickerStyle(.segmented)
-                if store.triggerMode == "toggle" {
-                    Text("Hands-free: triple-tap a trigger key to start listening, single tap to stop, double-tap to press Return.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("Hold to talk: hold a trigger key while you speak, release to type. Double-tap to press Return.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                }.pickerStyle(.segmented).labelsHidden()
+            }
+        case .triggerKeys:
+            SettingPage(icon: id.icon, title: "Trigger keys",
+                        subtitle: "Tap a key to turn it on or off. Highlighted keys start dictation. At least one stays on.") {
+                VStack(spacing: 14) {
+                    KeycapKeyboard(store: store)
+                    Toggle("I'm using a non-Mac (PC) keyboard", isOn: $store.pcKeyboard).font(.callout)
                 }
             }
-            Section("Trigger key") {
-                KeycapKeyboard(store: store)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 4)
-                Toggle("I'm using a non-Mac (PC) keyboard", isOn: $store.pcKeyboard)
-                Text("Tap a key to toggle it; highlighted keys are active. At least one key stays enabled.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-private struct IndicatorTab: View {
-    @ObservedObject var store: DictationSettingsStore
-    var body: some View {
-        Form {
-            Section {
-                HStack(spacing: 14) {
-                    DotPreview(store: store).frame(width: 48, height: 48)
-                    VStack(alignment: .leading) {
+        case .indicator:
+            SettingPage(icon: id.icon, title: "Recording indicator",
+                        subtitle: "How the floating mic looks while you dictate.") {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        DotPreview(store: store).frame(width: 56, height: 56)
                         Picker("Style", selection: $store.dotStyle) {
                             ForEach(DotStyle.allCases, id: \.self) { Text($0.title).tag($0) }
                         }
                         Picker("Speed", selection: $store.dotSpeed) {
                             ForEach(DotSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
                         }
+                        if store.dotStyle == .custom {
+                            HStack { Text("Hue"); Slider(value: $store.customHue, in: 0...1) }
+                        }
+                        HStack { Text("Opacity \(Int(store.dotOpacity * 100))%"); Slider(value: $store.dotOpacity, in: 0.2...1) }
+                        HStack { Text("Size \(Int(store.iconSize))px"); Slider(value: $store.iconSize, in: 24...80, step: 2) }
+                        HStack(spacing: 14) {
+                            Toggle("Wave", isOn: $store.motionWave)
+                            Toggle("Spin", isOn: $store.motionSpin)
+                            Toggle("Ripple", isOn: $store.motionRipple)
+                            Toggle("Breathe", isOn: $store.motionBreathe)
+                        }.toggleStyle(.checkbox).font(.caption)
+                        Toggle("Show microphone symbol", isOn: $store.showMicSymbol).font(.callout)
                     }
-                }
-                if store.dotStyle == .custom {
-                    HStack { Text("Hue"); Slider(value: $store.customHue, in: 0...1) }
-                }
-                HStack { Text("Opacity \(Int(store.dotOpacity * 100))%"); Slider(value: $store.dotOpacity, in: 0.2...1) }
+                }.frame(maxHeight: 330)
             }
-            Section("Motion") {
-                Toggle("Wave", isOn: $store.motionWave)
-                Toggle("Spin", isOn: $store.motionSpin)
-                Toggle("Ripple", isOn: $store.motionRipple)
-                Toggle("Breathe", isOn: $store.motionBreathe)
-            }
-            Section("Floating mic") {
-                HStack { Text("Icon size \(Int(store.iconSize))px"); Slider(value: $store.iconSize, in: 24...80, step: 2) }
-                Toggle("Show microphone symbol", isOn: $store.showMicSymbol)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-private struct CaptionsTab: View {
-    @ObservedObject var store: DictationSettingsStore
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Show live captions", isOn: $store.captionsEnabled)
-            }
-            Section("Placement") {
-                Picker("Position", selection: $store.position) {
-                    Text("Top").tag("top"); Text("Bottom").tag("bottom")
-                }.pickerStyle(.segmented)
-                Picker("Alignment", selection: $store.alignment) {
-                    Text("Left").tag("left"); Text("Center").tag("center"); Text("Right").tag("right")
-                }.pickerStyle(.segmented)
-            }
-            Section("Text") {
-                HStack { Text("Size \(Int(store.fontSize))"); Slider(value: $store.fontSize, in: 14...72) }
-                ColorPicker("Color", selection: $store.textColor, supportsOpacity: false)
-                HStack { Text("Opacity"); Slider(value: $store.textOpacity, in: 0.2...1) }
-            }
-            Section("Background") {
-                Toggle("Background box", isOn: $store.showBackground)
-                if store.showBackground {
-                    HStack { Text("Box opacity"); Slider(value: $store.backgroundOpacity, in: 0...1) }
-                }
-                Toggle("Window shadow", isOn: $store.showWindowShadow)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-private struct BehaviorTab: View {
-    @ObservedObject var store: DictationSettingsStore
-    var body: some View {
-        Form {
-            Section("Clipboard") {
-                Toggle("Clipboard cycling (hold ⌘, tap V to cycle history)", isOn: $store.clipboardCycling)
-            }
-            Section("While dictating") {
-                Toggle("Pause media / mute sound", isOn: $store.pauseMediaEnabled)
-                if store.pauseMediaEnabled {
-                    Picker("Method", selection: $store.pauseMethod) {
-                        Text("Pause media players").tag("pauseApps")
-                        Text("Mute all sound").tag("muteSystem")
+        case .captions:
+            SettingPage(icon: id.icon, title: "Live captions",
+                        subtitle: "See your words on screen as you speak.") {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        Toggle("Show live captions", isOn: $store.captionsEnabled)
+                        if store.captionsEnabled {
+                            Picker("Position", selection: $store.position) {
+                                Text("Top").tag("top"); Text("Bottom").tag("bottom")
+                            }.pickerStyle(.segmented)
+                            Picker("Alignment", selection: $store.alignment) {
+                                Text("Left").tag("left"); Text("Center").tag("center"); Text("Right").tag("right")
+                            }.pickerStyle(.segmented)
+                            HStack { Text("Size \(Int(store.fontSize))"); Slider(value: $store.fontSize, in: 14...72) }
+                            ColorPicker("Color", selection: $store.textColor, supportsOpacity: false)
+                            HStack { Text("Opacity"); Slider(value: $store.textOpacity, in: 0.2...1) }
+                            Toggle("Background box", isOn: $store.showBackground)
+                            if store.showBackground {
+                                HStack { Text("Box opacity"); Slider(value: $store.backgroundOpacity, in: 0...1) }
+                            }
+                            Toggle("Window shadow", isOn: $store.showWindowShadow)
+                        }
                     }
-                    if store.pauseMethod == "pauseApps" {
-                        ForEach(MediaController.commonApps, id: \.self) { app in
-                            Toggle(app, isOn: Binding(
-                                get: { store.pausedApps.contains(app) },
-                                set: { on in
-                                    if on { store.pausedApps.insert(app) } else { store.pausedApps.remove(app) }
-                                }))
+                }.frame(maxHeight: 330)
+            }
+        case .incremental:
+            SettingPage(icon: id.icon, title: "Paste as you speak",
+                        subtitle: "Type words as you talk, refreshing every few seconds, instead of all at once when you finish.") {
+                Toggle("Paste as you speak", isOn: $store.incrementalMode).toggleStyle(.switch)
+            }
+        case .clipboard:
+            SettingPage(icon: id.icon, title: "Clipboard cycling",
+                        subtitle: "After you paste, hold ⌘ and tap V again to cycle back through earlier clipboard items.") {
+                Toggle("Enable clipboard cycling", isOn: $store.clipboardCycling).toggleStyle(.switch)
+            }
+        case .media:
+            SettingPage(icon: id.icon, title: "Pause media",
+                        subtitle: "Pause your music or mute all sound while you dictate, then restore it after.") {
+                VStack(spacing: 12) {
+                    Toggle("Pause media / mute sound while dictating", isOn: $store.pauseMediaEnabled)
+                    if store.pauseMediaEnabled {
+                        Picker("Method", selection: $store.pauseMethod) {
+                            Text("Pause media players").tag("pauseApps")
+                            Text("Mute all sound").tag("muteSystem")
+                        }.pickerStyle(.segmented)
+                        if store.pauseMethod == "pauseApps" {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(MediaController.commonApps, id: \.self) { app in
+                                    Toggle(app, isOn: Binding(
+                                        get: { store.pausedApps.contains(app) },
+                                        set: { on in
+                                            if on { store.pausedApps.insert(app) } else { store.pausedApps.remove(app) }
+                                        }))
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }
             }
         }
-        .formStyle(.grouped)
     }
 }
 

@@ -484,7 +484,7 @@ private struct TagPill: View {
 
 // MARK: - Engine chooser (recommended + hidden big models)
 
-private struct EngineChooser: View {
+struct EngineChooser: View {
     @ObservedObject var store: DictationSettingsStore
     @Binding var showLarge: Bool
 
@@ -544,7 +544,7 @@ private struct EngineChooser: View {
     }
 }
 
-private struct EngineBadge: View {
+struct EngineBadge: View {
     let text: String; let tint: Color
     var body: some View {
         Text(text.uppercased())
