@@ -6,39 +6,45 @@ import CoreAudio
 /// Static description of every dictation engine, so the picker and onboarding can
 /// share one source of truth. Mirrors the tags/ids in StatusBarController.setEngine.
 enum EngineCatalog {
-    struct Engine { let id: String; let title: String; let blurb: String; let needs14: Bool }
+    struct Engine { let id: String; let title: String; let blurb: String; let needs14: Bool; let recommended: Bool; let large: Bool }
 
     static let all: [Engine] = [
         .init(id: "apple",   title: "Apple Speech",
-              blurb: "Built-in system dictation. Fast and always available; needs Speech Recognition permission.", needs14: false),
+              blurb: "Built-in system dictation. Fast and always available; needs Speech Recognition permission.", needs14: false, recommended: true, large: false),
         .init(id: "whistle", title: "Whistle — 17 MB, on-device",
-              blurb: "Tiny bundled model. CPU-only, no download, works on any Mac. Great low-footprint default.", needs14: false),
+              blurb: "Tiny bundled model. CPU-only, no download, works on any Mac. Great low-footprint default.", needs14: false, recommended: true, large: false),
         .init(id: "whisper-tiny",   title: "Whisper Tiny (~40 MB)",
-              blurb: "Smallest Whisper. Fast, lower accuracy. Downloads on first use.", needs14: true),
+              blurb: "Smallest Whisper. Fast, lower accuracy. Downloads on first use.", needs14: true, recommended: false, large: false),
         .init(id: "whisper-base",   title: "Whisper Base (~140 MB)",
-              blurb: "Small Whisper with a nice speed/accuracy balance.", needs14: true),
+              blurb: "Small Whisper with a nice speed/accuracy balance.", needs14: true, recommended: true, large: false),
         .init(id: "whisper-small",  title: "Whisper Small (~460 MB)",
-              blurb: "More accurate Whisper, a bit slower.", needs14: true),
+              blurb: "More accurate Whisper, a bit slower.", needs14: true, recommended: false, large: false),
         .init(id: "whisper-medium", title: "Whisper Medium (~1.5 GB)",
-              blurb: "High-accuracy Whisper. Large download, heavier to run.", needs14: true),
+              blurb: "High-accuracy Whisper. Large download, heavier to run.", needs14: true, recommended: false, large: true),
         .init(id: "distil-large-v3", title: "Distil-Whisper Large v3 (~594 MB)",
-              blurb: "Distilled large model — near-large accuracy, much faster.", needs14: true),
+              blurb: "Distilled large model — near-large accuracy, much faster.", needs14: true, recommended: false, large: true),
         .init(id: "distil-large-v3-turbo", title: "Distil-Whisper Large v3 Turbo (~600 MB)",
-              blurb: "Turbo distilled large — fastest of the large-class Whispers.", needs14: true),
-        .init(id: "whisper-large-v3-turbo", title: "Whisper Large v3 Turbo",
-              blurb: "Full large-v3 turbo. Top Whisper accuracy.", needs14: true),
+              blurb: "Turbo distilled large — fastest of the large-class Whispers.", needs14: true, recommended: false, large: true),
+        .init(id: "whisper-large-v3-turbo", title: "Whisper Large v3 Turbo (~1.5 GB)",
+              blurb: "Full large-v3 turbo. Top Whisper accuracy. Large download.", needs14: true, recommended: false, large: true),
         .init(id: "whisper-large-v3-turbo-632", title: "Whisper Large v3 Turbo (632 MB)",
-              blurb: "Compressed large-v3 turbo — large accuracy, smaller footprint.", needs14: true),
+              blurb: "Compressed large-v3 turbo — large accuracy, smaller footprint.", needs14: true, recommended: false, large: true),
         .init(id: "moonshine-tiny", title: "Moonshine Tiny (bundled)",
-              blurb: "Bundled on-device model tuned for low latency on short phrases.", needs14: true),
+              blurb: "Bundled on-device model tuned for low latency on short phrases.", needs14: true, recommended: false, large: false),
     ]
 
     static var available: [Engine] {
         if #available(macOS 14, *) { return all }
         return all.filter { !$0.needs14 }
     }
+    /// Everyday models shown by default (small/bundled). The big downloads are
+    /// hidden until the user opts to see them.
+    static var everyday: [Engine] { available.filter { !$0.large } }
+    static var largeModels: [Engine] { available.filter { $0.large } }
     static func blurb(for id: String) -> String { all.first { $0.id == id }?.blurb ?? "" }
     static func title(for id: String) -> String { all.first { $0.id == id }?.title ?? id }
+    static func isLarge(_ id: String) -> Bool { all.first { $0.id == id }?.large ?? false }
+    static func isRecommended(_ id: String) -> Bool { all.first { $0.id == id }?.recommended ?? false }
 }
 
 // MARK: - Settings store
@@ -67,6 +73,9 @@ final class DictationSettingsStore: ObservableObject {
     @Published var modControl: Bool { didSet { applyModifiers() } }
     @Published var modOption: Bool  { didSet { applyModifiers() } }
     @Published var modCommand: Bool { didSet { applyModifiers() } }
+    /// Display-only: relabel modifier keys for a non-Mac (PC) keyboard
+    /// (Option→Alt, Command→Win). The macOS-level modifier flags are identical.
+    @Published var pcKeyboard: Bool { didSet { UserDefaults.standard.set(pcKeyboard, forKey: "pcKeyboardLayout") } }
 
     // Recording indicator
     @Published var dotStyle: DotStyle { didSet { DotSettings.style = dotStyle } }
@@ -160,6 +169,7 @@ final class DictationSettingsStore: ObservableObject {
         modControl = mods.contains("control")
         modOption = mods.contains("option")
         modCommand = mods.contains("command")
+        pcKeyboard = d.bool(forKey: "pcKeyboardLayout")
 
         dotStyle = DotSettings.style
         dotSpeed = DotSettings.speed
@@ -287,11 +297,11 @@ private struct ShortcutsTab: View {
     var body: some View {
         Form {
             Section("Trigger key — hold to dictate, release to type") {
-                Toggle("Fn 🌐 (Globe)", isOn: $store.modFn)
-                Toggle("Control", isOn: $store.modControl)
-                Toggle("Option", isOn: $store.modOption)
-                Toggle("Command", isOn: $store.modCommand)
-                Text("Any enabled key starts recording while held. Double-tap a trigger key to press Return instead. At least one key stays enabled.")
+                KeycapKeyboard(store: store)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 4)
+                Toggle("I'm using a non-Mac (PC) keyboard", isOn: $store.pcKeyboard)
+                Text("Tap a key to toggle it; highlighted keys are active. Double-tap a trigger key while dictating to press Return. At least one key stays enabled.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
