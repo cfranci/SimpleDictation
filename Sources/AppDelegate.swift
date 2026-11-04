@@ -256,6 +256,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         NSApp.setActivationPolicy(.accessory)
+
+        // Wire the SwiftUI settings store to the live controllers, then run the
+        // first-launch onboarding (permissions + preferences) if it hasn't happened.
+        if let sm = speechManager, let sbc = statusBarController {
+            DictationSettingsStore.shared.configure(speechManager: sm, statusBar: sbc)
+        }
+        OnboardingWindowController.shared.showIfFirstRun()
     }
     
     func setupGlobalHotkeyMonitor() {

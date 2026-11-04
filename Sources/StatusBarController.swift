@@ -473,6 +473,10 @@ class StatusBarController: NSObject {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        let setupItem = NSMenuItem(title: "Setup Assistant…", action: #selector(openOnboarding), keyEquivalent: "")
+        setupItem.target = self
+        menu.addItem(setupItem)
+
         let restartItem = NSMenuItem(title: "Restart", action: #selector(restartApp), keyEquivalent: "r")
         restartItem.target = self
         menu.addItem(restartItem)
@@ -1000,6 +1004,10 @@ class StatusBarController: NSObject {
 
     @objc private func openSettings() {
         SettingsWindowController.shared.show()
+    }
+
+    @objc private func openOnboarding() {
+        OnboardingWindowController.shared.show()
     }
 
     @objc private func quitApp() {
