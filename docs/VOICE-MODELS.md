@@ -73,5 +73,39 @@ Mistral Voxtral 3 (Oct 2026); Kyutai STT.
 
 ---
 
+## Whistle (bundled now) vs Parakeet TDT (proposed) — they're complementary
+
+The app already bundles **Cactus Whistle** (`WhistleManager`, a 16.9 MB `.cact`
+through the Needle C engine). It is the opposite end of the spectrum from Parakeet
+TDT — keep both, don't replace.
+
+| | **Cactus Whistle** (bundled) | **Parakeet TDT 0.6B v3** (proposed) |
+|---|---|---|
+| Size | **16.9 MB**, bundled, no download | ~600M params, hundreds of MB, downloaded |
+| Compute | **CPU-only** — runs on *any* Mac incl. Intel | Apple **Neural Engine** via FluidAudio (Apple Silicon only) |
+| Architecture | log-mel → conv stem → 8 conformer encoder + 8 Needle decoder blocks (gated cross-attention), 2–4-bit quant | FastConformer encoder + **TDT** (Token-and-Duration Transducer) decoder |
+| Accuracy | 4.31% WER LibriSpeech test-clean (beats Whisper *base*) | ~1.93% on that same set; 6.18% avg on the hard 8-dataset leaderboard (beats Whisper *large-v3*) |
+| Latency | first token ~**11 ms** on a 10s clip | huge real-time factor on ANE (~3,000×+), ~2.6× faster than MLX |
+| Languages | 7 (en/de/fr/es/it/nl/pl) | 25 European + Japanese |
+| Deps | none — single `.cact` | FluidAudio Swift package + CoreML weights |
+
+**What "TDT" is:** Token-and-Duration Transducer. Unlike Whisper (autoregressive
+transformer, steps frame-by-frame, can hallucinate text in silence), TDT predicts
+each token *plus how many audio frames it spans* and jumps ahead by that duration —
+~10× faster, silent during silence, native word timestamps. Whistle is also
+conformer-based on the encoder, but its decoder is Cactus's Needle cross-attention
+decoder, not a transducer.
+
+**Verdict:** keep **Whistle** as the zero-dependency universal default/fallback
+(the only engine needing no download and no Apple Silicon); add **Parakeet TDT** as
+the premium high-accuracy engine for Apple Silicon. Lineup becomes:
+Apple (system) · Whistle (tiny/universal) · Parakeet TDT (accurate/Apple Silicon) ·
+Whisper/Moonshine (legacy options).
+
+Sources (comparison): Cactus Whistle (hyper.ai, Cactus-Compute/whistle);
+Parakeet TDT vs Whisper (MacParakeet); `nvidia/parakeet-tdt-0.6b-v3`.
+
+---
+
 > Copy-on-select is a separate feature tracked on its own branch
 > `feature/copy-on-select` (`docs/COPY-ON-SELECT.md`).
