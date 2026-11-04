@@ -76,6 +76,8 @@ final class DictationSettingsStore: ObservableObject {
     /// Display-only: relabel modifier keys for a non-Mac (PC) keyboard
     /// (Option→Alt, Command→Win). The macOS-level modifier flags are identical.
     @Published var pcKeyboard: Bool { didSet { UserDefaults.standard.set(pcKeyboard, forKey: "pcKeyboardLayout") } }
+    /// "hold" (hold key to talk) or "toggle" (triple-tap start, single-tap stop, double-tap Return).
+    @Published var triggerMode: String { didSet { UserDefaults.standard.set(triggerMode, forKey: "triggerMode") } }
 
     // Recording indicator
     @Published var dotStyle: DotStyle { didSet { DotSettings.style = dotStyle } }
@@ -170,6 +172,7 @@ final class DictationSettingsStore: ObservableObject {
         modOption = mods.contains("option")
         modCommand = mods.contains("command")
         pcKeyboard = d.bool(forKey: "pcKeyboardLayout")
+        triggerMode = d.string(forKey: "triggerMode") ?? "hold"
 
         dotStyle = DotSettings.style
         dotSpeed = DotSettings.speed
@@ -296,12 +299,27 @@ private struct ShortcutsTab: View {
     @ObservedObject var store: DictationSettingsStore
     var body: some View {
         Form {
-            Section("Trigger key — hold to dictate, release to type") {
+            Section("Trigger mode") {
+                Picker("Mode", selection: $store.triggerMode) {
+                    Text("Hold to talk").tag("hold")
+                    Text("Hands-free").tag("toggle")
+                }.pickerStyle(.segmented)
+                if store.triggerMode == "toggle" {
+                    Text("Hands-free: triple-tap a trigger key to start listening, single tap to stop, double-tap to press Return.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Hold to talk: hold a trigger key while you speak, release to type. Double-tap to press Return.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Section("Trigger key") {
                 KeycapKeyboard(store: store)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 4)
                 Toggle("I'm using a non-Mac (PC) keyboard", isOn: $store.pcKeyboard)
-                Text("Tap a key to toggle it; highlighted keys are active. Double-tap a trigger key while dictating to press Return. At least one key stays enabled.")
+                Text("Tap a key to toggle it; highlighted keys are active. At least one key stays enabled.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

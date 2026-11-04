@@ -217,7 +217,16 @@ struct OnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Trigger key — hold to dictate, release to type").font(.callout.weight(.semibold))
+                Text("Trigger key").font(.callout.weight(.semibold))
+                Picker("Mode", selection: $store.triggerMode) {
+                    Text("Hold to talk").tag("hold")
+                    Text("Hands-free").tag("toggle")
+                }.pickerStyle(.segmented)
+                Text(store.triggerMode == "toggle"
+                     ? "Triple-tap to start listening, single tap to stop, double-tap for Return."
+                     : "Hold a key to talk, release to type. Double-tap for Return.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 KeycapKeyboard(store: store)
                 Toggle("I'm using a non-Mac (PC) keyboard", isOn: $store.pcKeyboard)
                     .font(.callout)
@@ -249,9 +258,15 @@ struct OnboardingView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("How to dictate").font(.headline)
-                SetupStepRow(number: 1, text: "Hold \(triggerKeysText)")
-                SetupStepRow(number: 2, text: "Speak naturally")
-                SetupStepRow(number: 3, text: "Release — your words are typed at the cursor")
+                if store.triggerMode == "toggle" {
+                    SetupStepRow(number: 1, text: "Triple-tap \(triggerKeysText) to start listening")
+                    SetupStepRow(number: 2, text: "Speak naturally — hands-free")
+                    SetupStepRow(number: 3, text: "Single tap to stop — your words are typed at the cursor")
+                } else {
+                    SetupStepRow(number: 1, text: "Hold \(triggerKeysText)")
+                    SetupStepRow(number: 2, text: "Speak naturally")
+                    SetupStepRow(number: 3, text: "Release — your words are typed at the cursor")
+                }
                 Divider()
                 Label("Double-tap the key to press Return.", systemImage: "return")
                     .font(.caption).foregroundStyle(.secondary)

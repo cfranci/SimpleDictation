@@ -13,6 +13,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var triggerWatcher: TriggerWatcher?
     var lastKeyRelease: Date = Date.distantPast
     private var cancellables = Set<AnyCancellable>()
+
+    // Hands-free ("toggle") trigger-mode state. Taps are counted within a short
+    // window and resolved once the sequence settles:
+    //   single tap  -> stop (if listening)
+    //   double tap   -> press Return
+    //   triple tap   -> start hands-free listening (if not already)
+    // Edge-detected so duplicate global+local monitor events don't double-count.
+    private var hotkeyWasActive = false
+    private var togglePressTime: Date = .distantPast
+    private var tapCount = 0
+    private var tapTimer: Timer?
+    private let tapMaxHold: TimeInterval = 0.45   // a press longer than this isn't a "tap"
+    private let multiTapWindow: TimeInterval = 0.35
+
+    /// "hold" (default: hold key to talk, release to stop) or "toggle"
+    /// (triple-tap to start hands-free, single tap to stop, double-tap for Return).
+    var triggerMode: String {
+        get { UserDefaults.standard.string(forKey: "triggerMode") ?? "hold" }
+        set { UserDefaults.standard.set(newValue, forKey: "triggerMode") }
+    }
     
     /// Set of enabled modifier keys. Any one triggers recording.
     /// Stored in UserDefaults as an array of strings.
@@ -292,6 +312,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if modifiers.contains("option") && flags.contains(.option) { isHotkeyActive = true }
         if modifiers.contains("command") && flags.contains(.command) { isHotkeyActive = true }
 
+        // Hands-free mode: count taps (single=stop, double=Return, triple=start).
+        if triggerMode == "toggle" {
+            handleToggleTrigger(isActive: isHotkeyActive)
+            return
+        }
+
+        // Hold-to-talk mode (default).
         NSLog("[SimpleDictation] isHotkeyActive=%d isRecording=%d modifiers=%@", isHotkeyActive, speechManager.isRecording, modifiers.joined(separator: ","))
         if isHotkeyActive != speechManager.isRecording {
             if isHotkeyActive {
@@ -313,6 +340,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 statusBarController.isRecording = false
                 floatingWindow?.updateAppearance(recording: false)
             }
+        }
+    }
+
+    /// Hands-free trigger: detect clean taps (quick press+release) via edges and
+    /// accumulate them; once the sequence settles (`multiTapWindow`), resolve by
+    /// count. Long holds are ignored so the key still works as a normal modifier.
+    private func handleToggleTrigger(isActive: Bool) {
+        let now = Date()
+        if isActive && !hotkeyWasActive {
+            hotkeyWasActive = true
+            togglePressTime = now
+            return
+        }
+        guard !isActive && hotkeyWasActive else { return }   // only act on release edge
+        hotkeyWasActive = false
+        guard now.timeIntervalSince(togglePressTime) < tapMaxHold else { return }  // a hold, not a tap
+
+        tapCount += 1
+        tapTimer?.invalidate()
+        tapTimer = Timer.scheduledTimer(withTimeInterval: multiTapWindow, repeats: false) { [weak self] _ in
+            self?.resolveTaps()
+        }
+    }
+
+    private func resolveTaps() {
+        let count = tapCount
+        tapCount = 0
+        guard let sm = speechManager, let sbc = statusBarController, sbc.isEnabled else { return }
+
+        switch count {
+        case 1:   // stop (only meaningful while listening)
+            guard sm.isRecording else { return }
+            NSLog("[SimpleDictation] Hands-free: single tap -> stop")
+            lastKeyRelease = Date()
+            sm.stopRecording()
+            sbc.isRecording = false
+            floatingWindow?.updateAppearance(recording: false)
+        case 2:   // Return
+            NSLog("[SimpleDictation] Hands-free: double tap -> Return")
+            sm.pressEnter()
+        case 3:   // start hands-free listening
+            guard !sm.isRecording else { return }
+            NSLog("[SimpleDictation] Hands-free: triple tap -> start")
+            sm.startRecording()
+            sbc.isRecording = sm.isRecording
+            floatingWindow?.updateAppearance(recording: sm.isRecording)
+        default:
+            break
         }
     }
     
