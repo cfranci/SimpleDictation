@@ -3,12 +3,14 @@ import Cocoa
 /// Color families for the recording indicator, ported from MenuBarBuddy.
 /// Every style renders through the same animated two-tone engine.
 enum DotStyle: String, CaseIterable {
-    case classic, rainbow, ocean, lava, aurora, custom
+    case classic, rainbow, warm, cold, ocean, lava, aurora, custom
 
     var title: String {
         switch self {
         case .classic: return "Classic Red"
         case .rainbow: return "Rainbow"
+        case .warm:    return "Warm (purple · red · orange · yellow)"
+        case .cold:    return "Cold (green · blue · purple · pink)"
         case .ocean:   return "Ocean"
         case .lava:    return "Lava"
         case .aurora:  return "Aurora"
@@ -72,6 +74,16 @@ enum DotEffect {
         case .rainbow:
             let h = phase / (2 * .pi)
             return (hue(h), hue(h + 0.5))
+        case .warm:
+            // Smoothly sweeps the warm arc and back: purple → red → orange → yellow.
+            let t = 0.5 - 0.5 * cos(phase)          // ping-pong 0→1→0, no seam
+            let h = 0.80 + 0.35 * t                 // 0.80 purple … 1.15 (=0.15) yellow
+            return (hue(h), hue(h + 0.08))
+        case .cold:
+            // Smoothly sweeps the cool arc and back: green → blue → purple → pink.
+            let t = 0.5 - 0.5 * cos(phase)
+            let h = 0.33 + 0.57 * t                 // 0.33 green … 0.90 pink
+            return (hue(h), hue(h + 0.08))
         case .custom:
             return (hue(customHue), hue(customHue + 0.12))
         default:
@@ -84,7 +96,9 @@ enum DotEffect {
     /// A `size`×`size` circle filled with the animated two-tone gradient.
     /// Rendered per-pixel into a retina bitmap (cheap at these sizes).
     static func image(style: DotStyle, motions: Set<DotMotion>, phase: CGFloat,
-                      customHue: CGFloat, size: CGFloat, scale: CGFloat = 2) -> NSImage? {
+                      customHue: CGFloat, size: CGFloat, scale: CGFloat = 2,
+                      opacity: CGFloat = 1) -> NSImage? {
+        let op = max(0, min(1, opacity))
         let (topColor, bottomColor) = colors(style: style, phase: phase, customHue: customHue)
         let px = max(2, Int(size * scale))
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
@@ -139,10 +153,13 @@ enum DotEffect {
                 let r = tr + (br - tr) * t
                 let g = tg + (bg - tg) * t
                 let b = tb + (bb - tb) * t
-                bytes[off]   = UInt8(max(0, min(255, r * alpha * 255)))
-                bytes[off+1] = UInt8(max(0, min(255, g * alpha * 255)))
-                bytes[off+2] = UInt8(max(0, min(255, b * alpha * 255)))
-                bytes[off+3] = UInt8(max(0, min(255, alpha * 255)))
+                // Fold the user's translucence into the premultiplied alpha so
+                // both the color and the coverage dim together.
+                let a = alpha * op
+                bytes[off]   = UInt8(max(0, min(255, r * a * 255)))
+                bytes[off+1] = UInt8(max(0, min(255, g * a * 255)))
+                bytes[off+2] = UInt8(max(0, min(255, b * a * 255)))
+                bytes[off+3] = UInt8(max(0, min(255, a * 255)))
             }
         }
         let img = NSImage(size: NSSize(width: size, height: size))
@@ -176,6 +193,14 @@ enum DotSettings {
             return CGFloat(v ?? 0.6)
         }
         set { UserDefaults.standard.set(Double(newValue), forKey: "customDotHue") }
+    }
+    /// Translucence of the recording indicator, 0.2 (faint) … 1 (solid).
+    static var opacity: CGFloat {
+        get {
+            let v = UserDefaults.standard.object(forKey: "dotOpacity") as? Double
+            return CGFloat(v ?? 1.0)
+        }
+        set { UserDefaults.standard.set(Double(newValue), forKey: "dotOpacity") }
     }
     /// Whether to draw the microphone glyph on the floating button.
     static var showMicSymbol: Bool {

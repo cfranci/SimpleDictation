@@ -339,20 +339,22 @@ class MicPillView: NSView {
         if isRecording {
             // Multicolor animated indicator (MenuBarBuddy-style effect).
             let style = DotSettings.style
+            let dotOpacity = DotSettings.opacity
             let (topColor, _) = DotEffect.colors(style: style, phase: effectPhase, customHue: DotSettings.customHue)
             if let img = DotEffect.image(style: style, motions: DotSettings.motions, phase: effectPhase,
-                                         customHue: DotSettings.customHue, size: circleSize) {
+                                         customHue: DotSettings.customHue, size: circleSize,
+                                         opacity: dotOpacity) {
                 img.draw(in: circleRect)
             } else {
-                topColor.setFill(); path.fill()
+                topColor.withAlphaComponent(dotOpacity).setFill(); path.fill()
             }
-            // Audio-reactive ring in the style's leading tone.
+            // Audio-reactive ring in the style's leading tone (also honors translucence).
             let level = min(max(audioLevel, 0), 1.0)
             let ringWidth: CGFloat = 2.0 + 3.0 * level
             let ringRect = circleRect.insetBy(dx: -ringWidth, dy: -ringWidth)
             let ringPath = NSBezierPath(ovalIn: ringRect)
             ringPath.lineWidth = ringWidth
-            topColor.withAlphaComponent(0.4 + 0.6 * level).setStroke()
+            topColor.withAlphaComponent((0.4 + 0.6 * level) * dotOpacity).setStroke()
             ringPath.stroke()
         } else if isProcessing {
             NSColor(white: 0.15, alpha: 0.35).setFill()

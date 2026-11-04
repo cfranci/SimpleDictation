@@ -1,5 +1,9 @@
 #!/bin/bash
 set -e
+# Without pipefail, `xcodebuild ... | tail` masks a failed build (tail exits 0),
+# so the script would sign, install and launch a STALE app. pipefail makes the
+# pipeline inherit xcodebuild's failure so set -e aborts before any of that.
+set -o pipefail
 
 cd "$(dirname "$0")"
 

@@ -12,6 +12,7 @@ final class DictationSettingsStore: ObservableObject {
     @Published var dotStyle: DotStyle { didSet { DotSettings.style = dotStyle } }
     @Published var dotSpeed: DotSpeed { didSet { DotSettings.speed = dotSpeed } }
     @Published var customHue: Double { didSet { DotSettings.customHue = CGFloat(customHue) } }
+    @Published var dotOpacity: Double { didSet { DotSettings.opacity = CGFloat(dotOpacity) } }
     @Published var motionWave: Bool    { didSet { setMotion(.wave, motionWave) } }
     @Published var motionSpin: Bool    { didSet { setMotion(.spin, motionSpin) } }
     @Published var motionRipple: Bool  { didSet { setMotion(.ripple, motionRipple) } }
@@ -41,6 +42,7 @@ final class DictationSettingsStore: ObservableObject {
         dotStyle = DotSettings.style
         dotSpeed = DotSettings.speed
         customHue = Double(DotSettings.customHue)
+        dotOpacity = Double(DotSettings.opacity)
         let motions = DotSettings.motions
         motionWave = motions.contains(.wave)
         motionSpin = motions.contains(.spin)
@@ -69,7 +71,7 @@ private struct DotPreview: View {
             let motions = currentMotions()
             if let img = DotEffect.image(style: store.dotStyle, motions: motions,
                                          phase: CGFloat(phase), customHue: CGFloat(store.customHue),
-                                         size: 44) {
+                                         size: 44, opacity: CGFloat(store.dotOpacity)) {
                 Image(nsImage: img).resizable().frame(width: 44, height: 44)
             } else {
                 Circle().fill(.red).frame(width: 44, height: 44)
@@ -113,6 +115,10 @@ struct SettingsView: View {
                                 Text("Hue")
                                 Slider(value: $store.customHue, in: 0...1)
                             }
+                        }
+                        HStack {
+                            Text("Opacity \(Int(store.dotOpacity * 100))%")
+                            Slider(value: $store.dotOpacity, in: 0.2...1)
                         }
                         Divider()
                         Text("Motion").font(.caption).foregroundStyle(.secondary)
