@@ -735,6 +735,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             return
         }
 
+        // If incremental mode already pasted partial text during recording, the
+        // final paste must REPLACE it (delete + paste), not append a duplicate.
+        let wasIncremental = incrementalMode
+        let oldPastedCount = whisperPastedCharCount
+
         isProcessing = true
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
             guard let self = self else { return }
@@ -747,7 +752,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Whistle final: %@", text)
                 DispatchQueue.global(qos: .userInteractive).async {
-                    self.pasteText(text)
+                    if wasIncremental && oldPastedCount > 0 {
+                        self.deleteAndPaste(text)
+                    } else {
+                        self.pasteText(text)
+                    }
                     usleep(100000)
                     let pb = NSPasteboard.general
                     pb.clearContents()
@@ -847,8 +856,32 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         guard samples.count > 16000 else { return } // Need at least 1s
 
         isIncrementalTranscribing = true
-        let langCode = whisperLanguageCode
         let sessionID = whisperSessionID
+
+        // Whistle is a synchronous, bundled CPU engine — transcribe off-main and
+        // route the delta through the same delete-and-replace paste path. Without
+        // this branch, incremental would (wrongly) run through WhisperKit, which
+        // produces nothing when no Whisper model is downloaded.
+        if isWhistleEngine {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else { return }
+                let text = self.whistleManager.transcribe(samples: samples, language: nil)
+                DispatchQueue.main.async {
+                    self.isIncrementalTranscribing = false
+                    guard self.whisperSessionID == sessionID, self.isRecording, !text.isEmpty else { return }
+                    guard !self.isSilenceHallucination(text) else {
+                        NSLog("[SimpleDictation] Whistle incremental: suppressed hallucination '%@'", text)
+                        return
+                    }
+                    self.recognizedText = text
+                    NSLog("[SimpleDictation] Whistle incremental: %@", text)
+                    self.deleteAndPaste(text)
+                }
+            }
+            return
+        }
+
+        let langCode = whisperLanguageCode
         Task {
             let text = await whisperManager.transcribe(samples: samples, language: langCode)
 
