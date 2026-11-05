@@ -303,32 +303,23 @@ struct SettingPage<Content: View>: View {
 
 struct SettingsView: View {
     @ObservedObject var store: DictationSettingsStore
-    @State private var selection: SettingPageID = .engine
+    @State private var selection: SettingPageID? = .engine
     @State private var showLargeModels = false
 
     private let order = SettingPageID.allCases
+    private let groups: [(String, [SettingPageID])] = [
+        ("Recognition", [.engine, .microphone, .language]),
+        ("Input", [.triggerMode, .triggerKeys]),
+        ("Feedback", [.indicator, .captions]),
+        ("Extras", [.incremental, .clipboard, .media]),
+    ]
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section("Recognition") {
-                    row(.engine); row(.microphone); row(.language)
-                }
-                Section("Input") {
-                    row(.triggerMode); row(.triggerKeys)
-                }
-                Section("Feedback") {
-                    row(.indicator); row(.captions)
-                }
-                Section("Extras") {
-                    row(.incremental); row(.clipboard); row(.media)
-                }
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 184, ideal: 196, max: 220)
-        } detail: {
+        HStack(spacing: 0) {
+            sidebar
+            Divider()
             VStack(spacing: 0) {
-                page(selection)
+                page(selection ?? .engine)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
                 stepBar
@@ -338,12 +329,47 @@ struct SettingsView: View {
         .onAppear { store.speechManager?.refreshMicList() }
     }
 
-    private func row(_ id: SettingPageID) -> some View {
-        Label(id.title, systemImage: id.icon).tag(id)
+    private var sidebar: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(groups, id: \.0) { group in
+                    Text(group.0.uppercased())
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 2)
+                    ForEach(group.1) { id in sidebarRow(id) }
+                }
+            }
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: 208)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func sidebarRow(_ id: SettingPageID) -> some View {
+        let isSel = (selection ?? .engine) == id
+        return Button { selection = id } label: {
+            HStack(spacing: 9) {
+                Image(systemName: id.icon)
+                    .frame(width: 18)
+                    .foregroundStyle(isSel ? Color.accentColor : .secondary)
+                Text(id.title)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 6)
+                .fill(isSel ? Color.accentColor.opacity(0.20) : Color.clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
     }
 
     private var stepBar: some View {
-        let idx = order.firstIndex(of: selection) ?? 0
+        let sel = selection ?? .engine
+        let idx = order.firstIndex(of: sel) ?? 0
         return HStack {
             Button { if idx > 0 { selection = order[idx - 1] } } label: {
                 Label("Previous", systemImage: "chevron.left")
@@ -503,6 +529,21 @@ struct SettingsView: View {
     }
 }
 
+/// Places a window centered on the screen that currently has the mouse cursor,
+/// clamped to its visible area — so it never opens off-screen or on an inactive
+/// display (NSWindow.center() can land on the wrong screen in multi-monitor setups).
+func placeWindowOnActiveScreen(_ win: NSWindow, fallbackSize: NSSize) {
+    var size = win.frame.size
+    if size.width < 100 || size.height < 100 { size = fallbackSize }
+    let mouse = NSEvent.mouseLocation
+    let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+        ?? NSScreen.main ?? NSScreen.screens.first
+    guard let vf = screen?.visibleFrame else { win.center(); return }
+    let x = vf.midX - size.width / 2
+    let y = vf.midY - size.height / 2
+    win.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
+}
+
 /// Owns the settings NSWindow so it survives and reuses a single instance.
 final class SettingsWindowController {
     static let shared = SettingsWindowController()
@@ -515,9 +556,9 @@ final class SettingsWindowController {
             win.title = "SimpleDictation Settings"
             win.styleMask = [.titled, .closable, .miniaturizable]
             win.isReleasedWhenClosed = false
-            win.center()
             window = win
         }
+        if let win = window { placeWindowOnActiveScreen(win, fallbackSize: NSSize(width: 780, height: 592)) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

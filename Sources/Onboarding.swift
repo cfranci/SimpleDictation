@@ -654,9 +654,9 @@ final class OnboardingWindowController {
             win.title = "Welcome to SimpleDictation"
             win.styleMask = [.titled, .closable]
             win.isReleasedWhenClosed = false
-            win.center()
             window = win
         }
+        if let win = window { placeWindowOnActiveScreen(win, fallbackSize: NSSize(width: 560, height: 600)) }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

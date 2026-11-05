@@ -432,6 +432,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case "captiontest":
             NSLog("[SimpleDictation] External: caption test")
             runCaptionTest()
+        case "settings":
+            NSLog("[SimpleDictation] External: open settings")
+            SettingsWindowController.shared.show()
+        case "onboarding":
+            NSLog("[SimpleDictation] External: open onboarding")
+            OnboardingWindowController.shared.show()
         default:
             NSLog("[SimpleDictation] External: unknown command '%@'", cmd)
         }
