@@ -271,6 +271,37 @@ enum SettingPageID: String, CaseIterable, Identifiable {
     }
 }
 
+/// A selectable, explained option row (radio-style) for one-of-N choices.
+struct OptionCard: View {
+    let title: String
+    let description: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.callout.weight(.medium))
+                    Text(description).font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8)
+                .fill(selected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.03)))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .stroke(selected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 /// A clean, centered page that explains and hosts exactly one setting.
 struct SettingPage<Content: View>: View {
     let icon: String
@@ -423,13 +454,15 @@ struct SettingsView: View {
             }
         case .triggerMode:
             SettingPage(icon: id.icon, title: "Trigger mode",
-                        subtitle: store.triggerMode == "toggle"
-                        ? "Hands-free: triple-tap a trigger key to start listening, single tap to stop, double-tap for Return."
-                        : "Hold a trigger key while you speak, release to type. Double-tap for Return.") {
-                Picker("", selection: $store.triggerMode) {
-                    Text("Hold to talk").tag("hold")
-                    Text("Hands-free").tag("toggle")
-                }.pickerStyle(.segmented).labelsHidden()
+                        subtitle: "How you start and stop dictation.") {
+                VStack(spacing: 8) {
+                    OptionCard(title: "Hold to talk",
+                               description: "Hold a trigger key while you speak, release to type. Double-tap for Return.",
+                               selected: store.triggerMode == "hold") { store.triggerMode = "hold" }
+                    OptionCard(title: "Hands-free",
+                               description: "Triple-tap a trigger key to start listening, single tap to stop, double-tap for Return.",
+                               selected: store.triggerMode == "toggle") { store.triggerMode = "toggle" }
+                }
             }
         case .triggerKeys:
             SettingPage(icon: id.icon, title: "Trigger keys",
