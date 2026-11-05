@@ -20,7 +20,6 @@ class StatusBarController: NSObject {
     private var isMouseRecording: Bool = false
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
-    private var globalRightClickMonitor: Any?
 
     // Callbacks for AppDelegate to wire up
     var onStartRecording: (() -> Void)?
@@ -41,8 +40,9 @@ class StatusBarController: NSObject {
         }
     }
 
-    var isEnabled: Bool = true {
+    var isEnabled: Bool = (UserDefaults.standard.object(forKey: "dictationEnabled") as? Bool) ?? true {
         didSet {
+            UserDefaults.standard.set(isEnabled, forKey: "dictationEnabled")
             updateStatusIcon()
             updateEnabledMenu()
         }

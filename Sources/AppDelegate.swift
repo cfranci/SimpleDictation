@@ -24,8 +24,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var togglePressTime: Date = .distantPast
     private var tapCount = 0
     private var tapTimer: Timer?
-    private let tapMaxHold: TimeInterval = 0.45   // a press longer than this isn't a "tap"
-    private let multiTapWindow: TimeInterval = 0.35
+    private let tapMaxHold: TimeInterval = 0.6    // a press longer than this isn't a "tap"
+    private let multiTapWindow: TimeInterval = 0.5
+    private var lastTapAt: Date = .distantPast    // debounce duplicate edges from the two monitors
 
     /// "hold" (default: hold key to talk, release to stop) or "toggle"
     /// (triple-tap to start hands-free, single tap to stop, double-tap for Return).
@@ -356,6 +357,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !isActive && hotkeyWasActive else { return }   // only act on release edge
         hotkeyWasActive = false
         guard now.timeIntervalSince(togglePressTime) < tapMaxHold else { return }  // a hold, not a tap
+        // Debounce a duplicate release edge from the other monitor — a real tap
+        // can't physically repeat this fast, so this can only be a dupe.
+        guard now.timeIntervalSince(lastTapAt) > 0.06 else { return }
+        lastTapAt = now
 
         tapCount += 1
         tapTimer?.invalidate()
@@ -377,7 +382,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sm.stopRecording()
             sbc.isRecording = false
             floatingWindow?.updateAppearance(recording: false)
-        case 2:   // Return
+        case 2:   // Return — only while listening, so a mistimed start attempt
+                  // (two taps instead of three) can't fire a stray Enter into your app.
+            guard sm.isRecording else { return }
             NSLog("[SimpleDictation] Hands-free: double tap -> Return")
             sm.pressEnter()
         case 3:   // start hands-free listening

@@ -108,6 +108,10 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         return false
     }
     private var whisperSamples: [Float] = []
+    /// Serial queue guarding whisperSamples. The audio tap appends on a background
+    /// thread; stop reads a snapshot via sync so the final buffers can't land after
+    /// the read (which dropped the tail of short utterances — "typed nothing").
+    private let sampleQueue = DispatchQueue(label: "com.simpledictation.samples")
     private var whisperPastedCharCount: Int = 0  // chars currently on screen (including trailing space)
     private var isIncrementalTranscribing = false
     private var whisperTimer: Timer?
@@ -671,7 +675,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         hasPasted = false
         recognizedText = ""
         recordingStartTime = Date()
-        whisperSamples = []
+        sampleQueue.sync { whisperSamples = [] }
         whisperPastedCharCount = 0
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
@@ -703,7 +707,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         hasPasted = false
         recognizedText = ""
         recordingStartTime = Date()
-        whisperSamples = []
+        sampleQueue.sync { whisperSamples = [] }
         whisperPastedCharCount = 0
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
@@ -729,7 +733,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         isRecording = false
         guard hadEngine else { return }
 
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 8000 else {
             NSLog("[SimpleDictation] Whistle: too few samples (%d)", samples.count)
             return
@@ -821,7 +825,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             if let floatData = outputBuffer.floatChannelData?[0] {
                 let count = Int(outputBuffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: floatData, count: count))
-                DispatchQueue.main.async {
+                self.sampleQueue.async {
                     self.whisperSamples.append(contentsOf: samples)
                 }
             }
@@ -852,7 +856,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     private func performIncrementalTranscription() {
         guard !isIncrementalTranscribing else { return }
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 16000 else { return } // Need at least 1s
 
         isIncrementalTranscribing = true
@@ -937,7 +941,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         guard hadEngine else { return }
 
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 8000 else {
             NSLog("[SimpleDictation] Whisper: too few samples (%d) for transcription", samples.count)
             return
@@ -1020,7 +1024,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         hasPasted = false
         recognizedText = ""
         recordingStartTime = Date()
-        whisperSamples = []
+        sampleQueue.sync { whisperSamples = [] }
         whisperPastedCharCount = 0
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
@@ -1097,7 +1101,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             if let floatData = outputBuffer.floatChannelData?[0] {
                 let count = Int(outputBuffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: floatData, count: count))
-                DispatchQueue.main.async {
+                self.sampleQueue.async {
                     self.whisperSamples.append(contentsOf: samples)
                 }
             }
@@ -1128,7 +1132,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     private func performMoonshineIncrementalTranscription() {
         guard !isIncrementalTranscribing else { return }
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 16000 else { return }
 
         isIncrementalTranscribing = true
@@ -1163,7 +1167,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         guard hadEngine else { return }
 
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 8000 else {
             NSLog("[SimpleDictation] Moonshine: too few samples (%d) for transcription", samples.count)
             return
