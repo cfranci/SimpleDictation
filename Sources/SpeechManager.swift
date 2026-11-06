@@ -44,6 +44,15 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     var onProcessingStateChanged: ((Bool) -> Void)?
     var incrementalMode: Bool = false  // Off by default: accumulate all, paste on stop
 
+    /// Paste-as-you-speak only actually runs in HANDS-FREE mode. In hold-to-talk the
+    /// trigger key is physically held, which contaminates the synthetic paste/delete
+    /// keystrokes (Control+Cmd+V isn't paste; Fn+Delete is forward-delete), so the
+    /// delete-and-repaste corrupts into duplicated / premature text. Released key in
+    /// hands-free = clean keystrokes.
+    var incrementalActive: Bool {
+        incrementalMode && UserDefaults.standard.string(forKey: "triggerMode") == "toggle"
+    }
+
     /// Timestamp when recording actually started (used for short-recording guard)
     var recordingStartTime: Date?
 
@@ -741,7 +750,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         // If incremental mode already pasted partial text during recording, the
         // final paste must REPLACE it (delete + paste), not append a duplicate.
-        let wasIncremental = incrementalMode
+        let wasIncremental = incrementalActive
         let oldPastedCount = whisperPastedCharCount
 
         isProcessing = true
@@ -847,7 +856,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         startCaptionRecognizer()
 
         // Incremental transcription every 5 seconds (only when incremental mode is on)
-        if incrementalMode {
+        if incrementalActive {
             whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
                 self?.performIncrementalTranscription()
             }
@@ -951,7 +960,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         isProcessing = true
         let langCode = whisperLanguageCode
-        let wasIncremental = incrementalMode
+        let wasIncremental = incrementalActive
         let oldPastedCount = whisperPastedCharCount
         Task {
             let text = await whisperManager.transcribe(samples: samples, language: langCode)
@@ -1123,7 +1132,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         startCaptionRecognizer()
 
         // Incremental transcription every 5 seconds (only when incremental mode is on)
-        if incrementalMode {
+        if incrementalActive {
             whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
                 self?.performMoonshineIncrementalTranscription()
             }
@@ -1176,7 +1185,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         NSLog("[SimpleDictation] Moonshine final transcription: %d samples (%.1fs)", samples.count, Float(samples.count) / 16000.0)
 
         isProcessing = true
-        let wasIncremental = incrementalMode
+        let wasIncremental = incrementalActive
         let oldPastedCount = whisperPastedCharCount
         Task {
             let text = await moonshineManager.transcribe(samples: samples)

@@ -526,8 +526,16 @@ struct SettingsView: View {
             }
         case .incremental:
             SettingPage(icon: id.icon, title: "Paste as you speak",
-                        subtitle: "Type words as you talk, refreshing every few seconds, instead of all at once when you finish.") {
-                Toggle("Paste as you speak", isOn: $store.incrementalMode).toggleStyle(.switch)
+                        subtitle: "In Hands-free mode, type words as you talk — refreshing every few seconds — instead of all at once when you finish.") {
+                VStack(spacing: 10) {
+                    Toggle("Paste as you speak", isOn: $store.incrementalMode).toggleStyle(.switch)
+                    if store.incrementalMode && store.triggerMode != "toggle" {
+                        Label("Needs Hands-free trigger mode. In Hold-to-talk your text is still pasted when you release — holding a key while live-typing would duplicate/garble it.",
+                              systemImage: "info.circle")
+                            .font(.caption).foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         case .clipboard:
             SettingPage(icon: id.icon, title: "Clipboard cycling",
