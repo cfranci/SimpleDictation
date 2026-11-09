@@ -89,6 +89,23 @@ enum TextInjector {
         return AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFString) == .success
     }
 
+    // MARK: - Incremental replace (diff)
+
+    /// Replace previously-typed `old` with `new` by deleting only the diverging
+    /// tail and typing only the new remainder — append-only when `new` extends
+    /// `old`, so it stays fast and minimises backspaces. Returns what's now typed.
+    @discardableResult
+    static func replaceTyped(old: String, new: String) -> String {
+        let oldC = Array(old), newC = Array(new)
+        var common = 0
+        while common < oldC.count && common < newC.count && oldC[common] == newC[common] { common += 1 }
+        let toDelete = oldC.count - common
+        if toDelete > 0 { deleteBackward(toDelete); usleep(10000) }
+        let suffix = String(newC[common...])
+        if !suffix.isEmpty { typeUnicode(suffix, pid: nil) }
+        return new
+    }
+
     // MARK: - Delete (for incremental replace)
 
     /// Backspace `count` times. Private source + empty flags so a held Fn can't

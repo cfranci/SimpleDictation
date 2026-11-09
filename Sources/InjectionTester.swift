@@ -85,6 +85,38 @@ final class InjectionTester {
             write("\n", append: true)
         }
 
+        // Phase 2: the actual "paste as you speak" replace cycle. Feed a sequence
+        // of transcripts (append case, and a revision case) through the diff
+        // replacer and check the field ends correct — this exercises the DELETE
+        // path under a held key, which the simple insert test above does not.
+        write("\nINCREMENTAL REPLACE CYCLE\n", append: true)
+        let seqs: [(String, [String])] = [
+            ("append", ["the quick", "the quick brown", "the quick brown fox"]),
+            ("revise", ["the quick brown", "the Quick Brown Fox"]),
+        ]
+        for (sname, seq) in seqs {
+            for c in conds {
+                clearField()
+                usleep(120000)
+                if let vk = c.vk { TextInjector.holdModifier(vk, c.flag) }
+                usleep(40000)
+
+                var committed = ""
+                for t in seq {
+                    committed = TextInjector.replaceTyped(old: committed, new: t + " ")
+                    usleep(220000)
+                }
+
+                let got = readField()
+                if let vk = c.vk { TextInjector.releaseModifier(vk) }
+                usleep(60000)
+
+                let expected = (seq.last ?? "") + " "
+                let pass = got == expected
+                write("\(pass ? "PASS" : "FAIL")  [\(pad(sname, 8)) \(pad(c.name, 8))]  exp '\(expected)'  got '\(got.replacingOccurrences(of: "\n", with: "\\n"))'\n", append: true)
+            }
+        }
+
         NSLog("[SimpleDictation] Injection test complete → %@", resultsPath)
         DispatchQueue.main.async {
             self.textView?.string = "Injection test complete.\nResults: \(self.resultsPath)"

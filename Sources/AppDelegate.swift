@@ -323,12 +323,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[SimpleDictation] isHotkeyActive=%d isRecording=%d modifiers=%@", isHotkeyActive, speechManager.isRecording, modifiers.joined(separator: ","))
         if isHotkeyActive != speechManager.isRecording {
             if isHotkeyActive {
-                // Double-tap detection: if last release was < 400ms ago, send Enter instead
-                if Date().timeIntervalSince(lastKeyRelease) < 0.4 {
-                    NSLog("[SimpleDictation] Double-tap detected, pressing Enter")
-                    speechManager.pressEnter()
-                    return
-                }
+                // NOTE: no double-tap-to-Enter here — it fired Return into the user's
+                // app whenever a new dictation started within 400ms of ending one
+                // ("submits without asking"). Starting a new dictation just records.
                 NSLog("[SimpleDictation] Starting recording...")
                 speechManager.startRecording()
                 statusBarController.isRecording = speechManager.isRecording

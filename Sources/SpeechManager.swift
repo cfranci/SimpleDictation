@@ -119,6 +119,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     /// the read (which dropped the tail of short utterances — "typed nothing").
     private let sampleQueue = DispatchQueue(label: "com.simpledictation.samples")
     private var whisperPastedCharCount: Int = 0  // chars currently on screen (including trailing space)
+    private var whisperPastedText: String = ""   // the exact incremental text currently on screen (for diff replace)
     private var isIncrementalTranscribing = false
     private var whisperTimer: Timer?
     private var whisperSessionID: UInt64 = 0  // incremented each recording to discard stale results
@@ -682,7 +683,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         recognizedText = ""
         recordingStartTime = Date()
         sampleQueue.sync { whisperSamples = [] }
-        whisperPastedCharCount = 0
+        whisperPastedCharCount = 0; whisperPastedText = ""
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
 
@@ -714,7 +715,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         recognizedText = ""
         recordingStartTime = Date()
         sampleQueue.sync { whisperSamples = [] }
-        whisperPastedCharCount = 0
+        whisperPastedCharCount = 0; whisperPastedText = ""
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
         stopWhisperRecordingInternal()
@@ -913,20 +914,18 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
     }
 
-    /// Replace the previously typed incremental text with the new full transcript.
-    /// Clean backspaces + unicode typing (private event source, empty flags) so it
-    /// works even while the trigger key is physically held (hold-to-talk).
+    /// Reconcile what's on screen with the new transcript using a DIFF: delete only
+    /// the diverging tail, type only the new words (append-only when the transcript
+    /// just grows). Fast, and it minimises backspaces — fixing both the "takes
+    /// forever" slowdown and the "last segment repastes" duplication.
     private func deleteAndPaste(_ newText: String) {
-        TextInjector.deleteBackward(whisperPastedCharCount)
-        if whisperPastedCharCount > 0 { usleep(20000) }
         let cleaned = SpeechManager.cleanTranscript(newText)
-        guard !cleaned.isEmpty else { whisperPastedCharCount = 0; return }
-        let typed = cleaned + " "
-        TextInjector.typeUnicode(typed, pid: nil)
+        let target = cleaned.isEmpty ? "" : cleaned + " "
+        whisperPastedText = TextInjector.replaceTyped(old: whisperPastedText, new: target)
+        whisperPastedCharCount = whisperPastedText.count
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(cleaned, forType: .string)
-        whisperPastedCharCount = typed.count
     }
 
     private func stopWhisperRecording() {
@@ -1025,7 +1024,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         recognizedText = ""
         recordingStartTime = Date()
         sampleQueue.sync { whisperSamples = [] }
-        whisperPastedCharCount = 0
+        whisperPastedCharCount = 0; whisperPastedText = ""
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
 
