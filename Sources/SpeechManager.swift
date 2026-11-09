@@ -1256,7 +1256,19 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         s = s.replacingOccurrences(of: "[♪♫♬➤➜→⟶►◄«»]", with: " ", options: .regularExpression)
         // Collapse the whitespace the removals leave behind.
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Whisper/Whistle emit "Thank you." / "Thanks for watching" / "Bye" on
+        // trailing silence (a YouTube-caption training artifact). Peel one such
+        // trailer off the END when a real sentence precedes it — but never strip a
+        // short, genuinely-meant "thank you".
+        let trailer = "[,\\.\\s]+(thank you(\\s+for\\s+watching| very much)?|thanks(\\s+for\\s+watching)?|bye(\\s+bye)?|you)[\\.\\!\\s]*$"
+        if let re = try? NSRegularExpression(pattern: trailer, options: [.caseInsensitive]),
+           let m = re.firstMatch(in: s, options: [], range: NSRange(s.startIndex..<s.endIndex, in: s)),
+           let r = Range(m.range, in: s) {
+            let before = String(s[s.startIndex..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if before.count >= 12 { s = before }
+        }
+        return s
     }
 
     func pasteText(_ text: String) {
