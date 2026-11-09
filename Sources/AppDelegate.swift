@@ -445,6 +445,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case "onboarding":
             NSLog("[SimpleDictation] External: open onboarding")
             OnboardingWindowController.shared.show()
+        case "injecttest":
+            NSLog("[SimpleDictation] External: run injection test")
+            InjectionTester.shared.run()
         default:
             NSLog("[SimpleDictation] External: unknown command '%@'", cmd)
         }

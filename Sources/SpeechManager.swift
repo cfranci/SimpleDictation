@@ -44,14 +44,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     var onProcessingStateChanged: ((Bool) -> Void)?
     var incrementalMode: Bool = false  // Off by default: accumulate all, paste on stop
 
-    /// Paste-as-you-speak only actually runs in HANDS-FREE mode. In hold-to-talk the
-    /// trigger key is physically held, which contaminates the synthetic paste/delete
-    /// keystrokes (Control+Cmd+V isn't paste; Fn+Delete is forward-delete), so the
-    /// delete-and-repaste corrupts into duplicated / premature text. Released key in
-    /// hands-free = clean keystrokes.
-    var incrementalActive: Bool {
-        incrementalMode && UserDefaults.standard.string(forKey: "triggerMode") == "toggle"
-    }
+    /// Paste-as-you-speak. Now works in BOTH trigger modes: the incremental typer
+    /// uses TextInjector (CGEventKeyboardSetUnicodeString from a private event source
+    /// with empty flags), which the injection test proved types correctly even while
+    /// the trigger key is physically held — so hold-to-talk no longer corrupts it.
+    var incrementalActive: Bool { incrementalMode }
 
     /// Timestamp when recording actually started (used for short-recording guard)
     var recordingStartTime: Date?
@@ -916,26 +913,20 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
     }
 
-    /// Delete previously pasted text (via backspaces) then paste the new full text
+    /// Replace the previously typed incremental text with the new full transcript.
+    /// Clean backspaces + unicode typing (private event source, empty flags) so it
+    /// works even while the trigger key is physically held (hold-to-talk).
     private func deleteAndPaste(_ newText: String) {
-        // Delete old pasted text
-        if whisperPastedCharCount > 0 {
-            let src = CGEventSource(stateID: .hidSystemState)
-            for _ in 0..<whisperPastedCharCount {
-                let down = CGEvent(keyboardEventSource: src, virtualKey: 51, keyDown: true)
-                down?.post(tap: .cghidEventTap)
-                let up = CGEvent(keyboardEventSource: src, virtualKey: 51, keyDown: false)
-                up?.post(tap: .cghidEventTap)
-            }
-            usleep(30000)
-        }
-
-        // Paste new full text. pasteText strips annotations and adds a trailing
-        // space, so track the ACTUAL pasted length (cleaned) — otherwise the next
-        // incremental delete would remove the wrong number of characters.
-        let pastedClean = SpeechManager.cleanTranscript(newText)
-        pasteText(newText)
-        whisperPastedCharCount = pastedClean.isEmpty ? 0 : pastedClean.count + 1
+        TextInjector.deleteBackward(whisperPastedCharCount)
+        if whisperPastedCharCount > 0 { usleep(20000) }
+        let cleaned = SpeechManager.cleanTranscript(newText)
+        guard !cleaned.isEmpty else { whisperPastedCharCount = 0; return }
+        let typed = cleaned + " "
+        TextInjector.typeUnicode(typed, pid: nil)
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(cleaned, forType: .string)
+        whisperPastedCharCount = typed.count
     }
 
     private func stopWhisperRecording() {
@@ -1275,41 +1266,13 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             slog("pasteText: nothing to paste after stripping annotations from '\(text)'")
             return
         }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        let textToPaste = cleaned + " "
-        pasteboard.setString(textToPaste, forType: .string)
-
-        usleep(50000)
-
-        let src = CGEventSource(stateID: .hidSystemState)
-
-        // Every synthetic key event is tagged so the ClipboardCycler tap passes
-        // it through instead of treating our own paste as a user Cmd+V (which
-        // would suppress repeat pastes — the "transcribes but doesn't paste" bug).
-        let cmdDown = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: true)
-        cmdDown?.flags = .maskCommand
-        cmdDown?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
-        cmdDown?.post(tap: .cghidEventTap)
-
-        usleep(50000)
-
-        let vDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true)
-        vDown?.flags = .maskCommand
-        vDown?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
-        vDown?.post(tap: .cghidEventTap)
-
-        usleep(50000)
-
-        let vUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
-        vUp?.flags = .maskCommand
-        vUp?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
-        vUp?.post(tap: .cghidEventTap)
-
-        usleep(50000)
-
-        let cmdUp = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: false)
-        cmdUp?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
-        cmdUp?.post(tap: .cghidEventTap)
+        // Type the text directly via CGEventKeyboardSetUnicodeString instead of a
+        // synthetic Cmd+V. Verified (injection test) to be reliable even while a
+        // trigger key is physically held, and it doesn't drop in Chrome/Electron the
+        // way paste does. Keep the transcript on the clipboard too for manual re-paste.
+        TextInjector.typeUnicode(cleaned + " ", pid: nil)
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(cleaned, forType: .string)
     }
 }

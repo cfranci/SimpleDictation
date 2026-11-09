@@ -69,9 +69,6 @@ final class DictationSettingsStore: ObservableObject {
         guard !suppress else { return }
         speechManager?.incrementalMode = incrementalMode
         UserDefaults.standard.set(incrementalMode, forKey: "incrementalMode")
-        // Live typing is only reliable hands-free (a held key corrupts the synthetic
-        // keystrokes in hold mode), so enabling it switches you into hands-free.
-        if incrementalMode && triggerMode != "toggle" { triggerMode = "toggle" }
     } }
     @Published var appEnabled: Bool        { didSet { guard !suppress else { return }; statusBar?.isEnabled = appEnabled; statusBar?.onEnabledChanged?(appEnabled) } }
 
@@ -533,23 +530,8 @@ struct SettingsView: View {
             }
         case .incremental:
             SettingPage(icon: id.icon, title: "Paste as you speak",
-                        subtitle: "Type words as you talk (updating every few seconds) instead of all at once when you finish.") {
-                VStack(spacing: 10) {
-                    Toggle("Paste as you speak", isOn: $store.incrementalMode).toggleStyle(.switch)
-                    if store.incrementalMode {
-                        if store.triggerMode == "toggle" {
-                            Label("On — uses Hands-free: triple-tap a trigger key to start, single-tap to stop.",
-                                  systemImage: "hand.tap.fill")
-                                .font(.caption).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        } else {
-                            Label("Paused in Hold-to-talk — a held key corrupts live typing, so text still pastes when you release. Switch to Hands-free to type as you speak.",
-                                  systemImage: "info.circle")
-                                .font(.caption).foregroundStyle(.orange)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
+                        subtitle: "Type words as you talk (updating every few seconds) instead of all at once when you finish. Works in either trigger mode.") {
+                Toggle("Paste as you speak", isOn: $store.incrementalMode).toggleStyle(.switch)
             }
         case .clipboard:
             SettingPage(icon: id.icon, title: "Clipboard cycling",
