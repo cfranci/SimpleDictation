@@ -30,7 +30,7 @@
     {
       "binding": "DB",
       "database_name": "simpledictation-licenses",
-      "database_id": "PASTE_D1_DATABASE_ID_HERE" // from `npx wrangler d1 create` output
+      "database_id": "1604150d-18aa-4f28-8e9e-ab6c3a1083c2" // from `npx wrangler d1 create` output
     }
   ],
 
