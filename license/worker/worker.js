@@ -7,6 +7,8 @@
 //   POST /v1/activate   { code, device_id, device_name?, email? }
 //        -> { token, tier, email, activations, max_activations }
 //   POST /v1/validate   { token }   -> { valid, verified, claim? }   (informational; see note)
+//   POST /v1/stripe/webhook   Stripe -> us. A paid checkout mints a key and emails it.
+//   GET  /v1/order?session=cs_...   the thank-you page polls this to show the buyer's key
 //
 // Admin endpoints (Authorization: Bearer <ADMIN_TOKEN>):
 //   GET   /admin/keys?status=&batch=&q=&page=&per_page=
@@ -20,6 +22,10 @@
 //   ED25519_PRIVATE_KEY_B64  base32 of the 48-byte PKCS8 DER (exactly what gen-keys.mjs prints)
 //   ADMIN_TOKEN              long random string
 //   IP_SALT                  random, for hashing IPs
+//   STRIPE_WEBHOOK_SECRET    whsec_... signing secret of the Stripe webhook endpoint
+//   RESEND_API_KEY           to email buyers their key (ALERT_FROM must be a verified sender)
+// Vars: STRIPE_PAYMENT_LINK (plink_... of the $4.20 link; other sales on the same Stripe
+//       account are ignored), DOWNLOAD_URL (where the DMG lives).
 //   PUBLIC_KEY               (OPTIONAL) base32 raw 32-byte public key — ONLY to make
 //                            /v1/validate actually verify signatures. See loud note there.
 
@@ -439,15 +445,138 @@ async function sweepRateLimits(env) {
   await env.DB.prepare(`DELETE FROM rate_limits WHERE expires_at < ?`).bind(now).run();
 }
 
-async function sendEmail(env, subject, text) {
-  if (!env.RESEND_API_KEY || !env.ALERT_EMAIL) return false; // not configured -> no-op
+async function sendEmail(env, subject, text, to) {
+  const recipient = to || env.ALERT_EMAIL;
+  if (!env.RESEND_API_KEY || !recipient) return false; // not configured -> no-op
   const from = env.ALERT_FROM || 'SimpleDictation <onboarding@resend.dev>';
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to: [env.ALERT_EMAIL], subject, text }),
+    body: JSON.stringify({ from, to: [recipient], subject, text }),
   });
   return r.ok;
+}
+
+// ---------- Stripe purchase fulfilment ----------
+// The Worker never calls Stripe. It only RECEIVES the signed webhook, so no Stripe
+// API key lives here and no request to Stripe leaves Cloudflare.
+
+function timingSafeEqualHex(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// Stripe-Signature: "t=<unix>,v1=<hex hmac>[,v1=...]". Signed payload is "<t>.<raw body>".
+async function verifyStripeSignature(raw, header, secret, nowSec = Math.floor(Date.now() / 1000)) {
+  if (!header || !secret) return false;
+  let t = null; const sigs = [];
+  for (const part of header.split(',')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    const k = part.slice(0, i).trim(), v = part.slice(i + 1).trim();
+    if (k === 't') t = v;
+    if (k === 'v1') sigs.push(v.toLowerCase());
+  }
+  if (!t || !/^\d+$/.test(t) || sigs.length === 0) return false;
+  if (Math.abs(nowSec - parseInt(t, 10)) > 300) return false; // replay window: 5 minutes
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, enc.encode(`${t}.${raw}`));
+  const expected = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return sigs.some((sig) => timingSafeEqualHex(sig, expected));
+}
+
+function licenseEmailText(env, code) {
+  const download = env.DOWNLOAD_URL || 'https://github.com/cfranci/SimpleDictation/releases/latest';
+  return [
+    'Thanks for buying SimpleDictation.',
+    '',
+    `Your license key: ${code}`,
+    '',
+    `1. Download the app: ${download}`,
+    '2. Open the DMG and drag SimpleDictation to Applications.',
+    '3. Open it, then go to Settings > License, paste the key and click Activate.',
+    '',
+    'The key works on two Macs. Keep this email so you can find it later.',
+    'Not for you? Reply within 30 days for a full refund.',
+  ].join('\n');
+}
+
+async function handleStripeWebhook(req, env) {
+  const plain = (text, status) => new Response(text, { status });
+  // 5xx on misconfiguration makes Stripe retry until it is fixed, so no sale is lost.
+  if (!env.STRIPE_WEBHOOK_SECRET || !env.STRIPE_PAYMENT_LINK) return plain('not configured', 503);
+
+  const raw = await req.text();
+  if (!(await verifyStripeSignature(raw, req.headers.get('Stripe-Signature'), env.STRIPE_WEBHOOK_SECRET))) {
+    return plain('bad signature', 400);
+  }
+  let event;
+  try { event = JSON.parse(raw); } catch { return plain('bad json', 400); }
+
+  const type = event && event.type;
+  if (type !== 'checkout.session.completed' && type !== 'checkout.session.async_payment_succeeded') {
+    return plain('ignored', 200);
+  }
+  const session = (event.data && event.data.object) || {};
+  if (session.payment_link !== env.STRIPE_PAYMENT_LINK) return plain('ignored: other product', 200);
+  if (session.payment_status !== 'paid') return plain('ignored: unpaid', 200);
+  if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(String(session.id || ''))) return plain('bad session', 400);
+
+  const note = `stripe ${session.id}`;
+  const email = String((session.customer_details && session.customer_details.email) || session.customer_email || '').slice(0, 254);
+
+  // Stripe retries and can deliver twice. One session = one key (also enforced by
+  // the unique index idx_licenses_stripe_note in schema.sql).
+  const existing = await env.DB.prepare(`SELECT code FROM licenses WHERE note = ?`).bind(note).first();
+  if (existing) return plain('already fulfilled', 200);
+
+  let code = null;
+  for (let attempt = 0; attempt < 4 && !code; attempt++) {
+    const candidate = randomCode();
+    const canon = canonicalizeCode(candidate);
+    if (!canon) continue;
+    try {
+      await env.DB.prepare(
+        `INSERT INTO licenses (id, code, code_canon, status, batch, tier, email, max_activations, note)
+         VALUES (?, ?, ?, 'unused', 'stripe', 'paid', ?, 2, ?)`
+      ).bind(randomId(), candidate, canon, email || null, note).run();
+      code = candidate;
+    } catch (e) {
+      // A concurrent delivery won the race for this session: that is success.
+      const won = await env.DB.prepare(`SELECT code FROM licenses WHERE note = ?`).bind(note).first();
+      if (won) return plain('already fulfilled', 200);
+      // Otherwise a code collision: loop and try a new code.
+    }
+  }
+  if (!code) return plain('could not mint a key', 500); // Stripe retries
+
+  let emailed = false;
+  if (email) {
+    try { emailed = await sendEmail(env, 'Your SimpleDictation license key', licenseEmailText(env, code), email); }
+    catch { emailed = false; }
+  }
+  if (!emailed) {
+    // The buyer still sees the key on the thank-you page. Tell the owner to follow up.
+    try {
+      await sendEmail(env, 'SimpleDictation: a buyer was not emailed their key',
+        `Checkout ${session.id} minted a key but the email did not send. Buyer: ${email || '(no email on the session)'}. Look the key up in the admin page (batch "stripe").`);
+    } catch { /* best effort */ }
+  }
+  return plain(emailed ? 'fulfilled' : 'fulfilled, email failed', 200);
+}
+
+// The thank-you page polls this with the checkout session id Stripe puts in the
+// redirect URL. The id is long and random, so knowing it is the proof of purchase.
+async function handleOrder(req, env, url, cors) {
+  const session = url.searchParams.get('session') || '';
+  if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(session)) return json({ error: 'bad_session' }, 400, cors);
+  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
+  if (!(await rateLimit(env, `order:${ip}`, 40))) return json({ error: 'rate_limited' }, 429, cors);
+  const row = await env.DB.prepare(`SELECT code FROM licenses WHERE note = ?`).bind(`stripe ${session}`).first();
+  if (!row) return json({ pending: true }, 404, cors);
+  return json({ code: row.code, download: env.DOWNLOAD_URL || null }, 200, cors, { 'Cache-Control': 'no-store' });
 }
 
 async function keyCounts(env) {
@@ -497,6 +626,8 @@ export default {
       // public
       if (req.method === 'POST' && url.pathname === '/v1/activate') return handleActivate(req, env, cors);
       if (req.method === 'POST' && url.pathname === '/v1/validate') return handleValidate(req, env, cors);
+      if (req.method === 'POST' && url.pathname === '/v1/stripe/webhook') return handleStripeWebhook(req, env);
+      if (req.method === 'GET'  && url.pathname === '/v1/order') return handleOrder(req, env, url, cors);
       if (req.method === 'GET'  && url.pathname === '/')
         return json({ ok: true, service: 'simpledictation-license', kid: env.KID }, 200, cors);
 

@@ -44,6 +44,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
     var onProcessingStateChanged: ((Bool) -> Void)?
     var incrementalMode: Bool = false  // Off by default: accumulate all, paste on stop
 
+    /// Paste-as-you-speak. Now works in BOTH trigger modes: the incremental typer
+    /// uses TextInjector (CGEventKeyboardSetUnicodeString from a private event source
+    /// with empty flags), which the injection test proved types correctly even while
+    /// the trigger key is physically held — so hold-to-talk no longer corrupts it.
+    var incrementalActive: Bool { incrementalMode }
+
     /// Timestamp when recording actually started (used for short-recording guard)
     var recordingStartTime: Date?
 
@@ -108,7 +114,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         return false
     }
     private var whisperSamples: [Float] = []
+    /// Serial queue guarding whisperSamples. The audio tap appends on a background
+    /// thread; stop reads a snapshot via sync so the final buffers can't land after
+    /// the read (which dropped the tail of short utterances — "typed nothing").
+    private let sampleQueue = DispatchQueue(label: "com.simpledictation.samples")
     private var whisperPastedCharCount: Int = 0  // chars currently on screen (including trailing space)
+    private var whisperPastedText: String = ""   // the exact incremental text currently on screen (for diff replace)
     private var isIncrementalTranscribing = false
     private var whisperTimer: Timer?
     private var whisperSessionID: UInt64 = 0  // incremented each recording to discard stale results
@@ -160,9 +171,10 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        // Match VNOCH: allow server fallback so partials stream smoothly
-        // word-by-word (on-device tends to deliver delayed/chunky results).
-        request.requiresOnDeviceRecognition = false
+        // Keep audio on this Mac whenever Apple has an on-device model for the
+        // language. Only languages without one fall back to Apple's servers.
+        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+        request.contextualStrings = TextPolish.vocabulary
         request.addsPunctuation = true
         captionRecognizer = recognizer
         captionRequest = request
@@ -410,6 +422,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
 
         recognitionRequest.shouldReportPartialResults = true
+        recognitionRequest.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+        recognitionRequest.contextualStrings = TextPolish.vocabulary
         if #available(macOS 13.0, *) {
             recognitionRequest.addsPunctuation = true
         }
@@ -588,6 +602,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         // so buffers immediately flow to the new request with no gap.
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+        request.contextualStrings = TextPolish.vocabulary
         if #available(macOS 13.0, *) {
             request.addsPunctuation = true
         }
@@ -671,8 +687,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         hasPasted = false
         recognizedText = ""
         recordingStartTime = Date()
-        whisperSamples = []
-        whisperPastedCharCount = 0
+        sampleQueue.sync { whisperSamples = [] }
+        whisperPastedCharCount = 0; whisperPastedText = ""
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
 
@@ -703,8 +719,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         hasPasted = false
         recognizedText = ""
         recordingStartTime = Date()
-        whisperSamples = []
-        whisperPastedCharCount = 0
+        sampleQueue.sync { whisperSamples = [] }
+        whisperPastedCharCount = 0; whisperPastedText = ""
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
         stopWhisperRecordingInternal()
@@ -729,16 +745,21 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         isRecording = false
         guard hadEngine else { return }
 
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 8000 else {
             NSLog("[SimpleDictation] Whistle: too few samples (%d)", samples.count)
             return
         }
 
+        // If incremental mode already pasted partial text during recording, the
+        // final paste must REPLACE it (delete + paste), not append a duplicate.
+        let wasIncremental = incrementalActive
+        let oldPastedCount = whisperPastedCharCount
+
         isProcessing = true
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
             guard let self = self else { return }
-            let text = self.whistleManager.transcribe(samples: samples, language: nil)
+            let text = self.whistleManager.transcribe(samples: samples, language: nil, keywords: SpeechManager.whistleKeywords)
             DispatchQueue.main.async {
                 guard !text.isEmpty, !self.isSilenceHallucination(text) else {
                     self.isProcessing = false
@@ -747,7 +768,11 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
                 self.recognizedText = text
                 NSLog("[SimpleDictation] Whistle final: %@", text)
                 DispatchQueue.global(qos: .userInteractive).async {
-                    self.pasteText(text)
+                    if wasIncremental && oldPastedCount > 0 {
+                        self.deleteAndPaste(text)
+                    } else {
+                        self.pasteText(text)
+                    }
                     usleep(100000)
                     let pb = NSPasteboard.general
                     pb.clearContents()
@@ -812,7 +837,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             if let floatData = outputBuffer.floatChannelData?[0] {
                 let count = Int(outputBuffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: floatData, count: count))
-                DispatchQueue.main.async {
+                self.sampleQueue.async {
                     self.whisperSamples.append(contentsOf: samples)
                 }
             }
@@ -834,7 +859,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         startCaptionRecognizer()
 
         // Incremental transcription every 5 seconds (only when incremental mode is on)
-        if incrementalMode {
+        if incrementalActive {
             whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
                 self?.performIncrementalTranscription()
             }
@@ -843,12 +868,36 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     private func performIncrementalTranscription() {
         guard !isIncrementalTranscribing else { return }
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 16000 else { return } // Need at least 1s
 
         isIncrementalTranscribing = true
-        let langCode = whisperLanguageCode
         let sessionID = whisperSessionID
+
+        // Whistle is a synchronous, bundled CPU engine — transcribe off-main and
+        // route the delta through the same delete-and-replace paste path. Without
+        // this branch, incremental would (wrongly) run through WhisperKit, which
+        // produces nothing when no Whisper model is downloaded.
+        if isWhistleEngine {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else { return }
+                let text = self.whistleManager.transcribe(samples: samples, language: nil, keywords: SpeechManager.whistleKeywords)
+                DispatchQueue.main.async {
+                    self.isIncrementalTranscribing = false
+                    guard self.whisperSessionID == sessionID, self.isRecording, !text.isEmpty else { return }
+                    guard !self.isSilenceHallucination(text) else {
+                        NSLog("[SimpleDictation] Whistle incremental: suppressed hallucination '%@'", text)
+                        return
+                    }
+                    self.recognizedText = text
+                    NSLog("[SimpleDictation] Whistle incremental: %@", text)
+                    self.deleteAndPaste(text)
+                }
+            }
+            return
+        }
+
+        let langCode = whisperLanguageCode
         Task {
             let text = await whisperManager.transcribe(samples: samples, language: langCode)
 
@@ -870,26 +919,19 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
     }
 
-    /// Delete previously pasted text (via backspaces) then paste the new full text
+    /// Reconcile what's on screen with the new transcript using a DIFF: delete only
+    /// the diverging tail, type only the new words (append-only when the transcript
+    /// just grows). Fast, and it minimises backspaces — fixing both the "takes
+    /// forever" slowdown and the "last segment repastes" duplication.
     private func deleteAndPaste(_ newText: String) {
-        // Delete old pasted text
-        if whisperPastedCharCount > 0 {
-            let src = CGEventSource(stateID: .hidSystemState)
-            for _ in 0..<whisperPastedCharCount {
-                let down = CGEvent(keyboardEventSource: src, virtualKey: 51, keyDown: true)
-                down?.post(tap: .cghidEventTap)
-                let up = CGEvent(keyboardEventSource: src, virtualKey: 51, keyDown: false)
-                up?.post(tap: .cghidEventTap)
-            }
-            usleep(30000)
-        }
-
-        // Paste new full text. pasteText strips annotations and adds a trailing
-        // space, so track the ACTUAL pasted length (cleaned) — otherwise the next
-        // incremental delete would remove the wrong number of characters.
-        let pastedClean = SpeechManager.cleanTranscript(newText)
-        pasteText(newText)
-        whisperPastedCharCount = pastedClean.isEmpty ? 0 : pastedClean.count + 1
+        let cleaned = SpeechManager.cleanTranscript(newText)
+        let target = cleaned.isEmpty ? "" : cleaned + " "
+        whisperPastedText = TextInjector.replaceTyped(old: whisperPastedText, new: target)
+        whisperPastedCharCount = whisperPastedText.count
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(cleaned, forType: .string)
+        fireEnterIfArmed()
     }
 
     private func stopWhisperRecording() {
@@ -904,7 +946,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         guard hadEngine else { return }
 
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 8000 else {
             NSLog("[SimpleDictation] Whisper: too few samples (%d) for transcription", samples.count)
             return
@@ -914,7 +956,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         isProcessing = true
         let langCode = whisperLanguageCode
-        let wasIncremental = incrementalMode
+        let wasIncremental = incrementalActive
         let oldPastedCount = whisperPastedCharCount
         Task {
             let text = await whisperManager.transcribe(samples: samples, language: langCode)
@@ -987,8 +1029,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         hasPasted = false
         recognizedText = ""
         recordingStartTime = Date()
-        whisperSamples = []
-        whisperPastedCharCount = 0
+        sampleQueue.sync { whisperSamples = [] }
+        whisperPastedCharCount = 0; whisperPastedText = ""
         isIncrementalTranscribing = false
         whisperSessionID &+= 1
 
@@ -1064,7 +1106,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             if let floatData = outputBuffer.floatChannelData?[0] {
                 let count = Int(outputBuffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: floatData, count: count))
-                DispatchQueue.main.async {
+                self.sampleQueue.async {
                     self.whisperSamples.append(contentsOf: samples)
                 }
             }
@@ -1086,7 +1128,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         startCaptionRecognizer()
 
         // Incremental transcription every 5 seconds (only when incremental mode is on)
-        if incrementalMode {
+        if incrementalActive {
             whisperTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
                 self?.performMoonshineIncrementalTranscription()
             }
@@ -1095,7 +1137,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     private func performMoonshineIncrementalTranscription() {
         guard !isIncrementalTranscribing else { return }
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 16000 else { return }
 
         isIncrementalTranscribing = true
@@ -1130,7 +1172,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
         guard hadEngine else { return }
 
-        let samples = whisperSamples
+        let samples = sampleQueue.sync { whisperSamples }
         guard samples.count > 8000 else {
             NSLog("[SimpleDictation] Moonshine: too few samples (%d) for transcription", samples.count)
             return
@@ -1139,7 +1181,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         NSLog("[SimpleDictation] Moonshine final transcription: %d samples (%.1fs)", samples.count, Float(samples.count) / 16000.0)
 
         isProcessing = true
-        let wasIncremental = incrementalMode
+        let wasIncremental = incrementalActive
         let oldPastedCount = whisperPastedCharCount
         Task {
             let text = await moonshineManager.transcribe(samples: samples)
@@ -1192,6 +1234,36 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     // MARK: - Keypress Helpers
 
+    // "Send" gesture support: Return must land after the dictated text, which
+    // is typed asynchronously once transcription finishes.
+    private var enterArmedUntil: Date?
+    private let enterLock = NSLock()
+
+    /// Press Return once the dictation now finishing has been typed. If nothing
+    /// gets typed within `seconds`, nothing is pressed.
+    func pressEnterAfterDelivery(within seconds: TimeInterval = 10) {
+        enterLock.lock(); enterArmedUntil = Date().addingTimeInterval(seconds); enterLock.unlock()
+    }
+
+    func cancelPendingEnter() {
+        enterLock.lock(); enterArmedUntil = nil; enterLock.unlock()
+    }
+
+    /// Return now, or after the text if a transcription is still in flight.
+    func sendReturn() {
+        if isProcessing { pressEnterAfterDelivery() } else { pressEnter() }
+    }
+
+    private func fireEnterIfArmed() {
+        enterLock.lock()
+        let armed = enterArmedUntil.map { $0 > Date() } ?? false
+        enterArmedUntil = nil
+        enterLock.unlock()
+        guard armed else { return }
+        // Give the app a beat to take in the typed characters first.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.pressEnter() }
+    }
+
     func pressEnter() {
         // Use privateState so modifiers (fn/option) held by the user
         // don't turn this into Option+Return (newline) instead of Return (submit)
@@ -1202,6 +1274,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         let up = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)
         up?.flags = []
         up?.post(tap: .cghidEventTap)
+    }
+
+    /// Custom-dictionary words as Whistle expects them: newline-separated, or nil.
+    static var whistleKeywords: String? {
+        let words = TextPolish.vocabulary
+        return words.isEmpty ? nil : words.joined(separator: "\n")
     }
 
     // MARK: - Paste
@@ -1220,7 +1298,20 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         s = s.replacingOccurrences(of: "[♪♫♬➤➜→⟶►◄«»]", with: " ", options: .regularExpression)
         // Collapse the whitespace the removals leave behind.
         s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Whisper/Whistle emit "Thank you." / "Thanks for watching" / "Bye" on
+        // trailing silence (a YouTube-caption training artifact). Peel one such
+        // trailer off the END when a real sentence precedes it — but never strip a
+        // short, genuinely-meant "thank you".
+        let trailer = "[,\\.\\s]+(thank you(\\s+for\\s+watching| very much)?|thanks(\\s+for\\s+watching)?|bye(\\s+bye)?|you)[\\.\\!\\s]*$"
+        if let re = try? NSRegularExpression(pattern: trailer, options: [.caseInsensitive]),
+           let m = re.firstMatch(in: s, options: [], range: NSRange(s.startIndex..<s.endIndex, in: s)),
+           let r = Range(m.range, in: s) {
+            let before = String(s[s.startIndex..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if before.count >= 12 { s = before }
+        }
+        // Filler removal and the user's custom dictionary (both on-device rules).
+        return TextPolish.apply(s)
     }
 
     func pasteText(_ text: String) {
@@ -1229,41 +1320,27 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             slog("pasteText: nothing to paste after stripping annotations from '\(text)'")
             return
         }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        let textToPaste = cleaned + " "
-        pasteboard.setString(textToPaste, forType: .string)
+        // Optional on-device language-model pass (Apple Intelligence). Only for a
+        // finished transcript: paste-as-you-speak has already typed the words.
+        if AIPolish.enabled, !incrementalActive, AIPolish.isAvailable {
+            Task { [weak self] in
+                let polished = await AIPolish.polish(cleaned) ?? cleaned
+                await MainActor.run { self?.deliver(polished) }
+            }
+            return
+        }
+        deliver(cleaned)
+    }
 
-        usleep(50000)
-
-        let src = CGEventSource(stateID: .hidSystemState)
-
-        // Every synthetic key event is tagged so the ClipboardCycler tap passes
-        // it through instead of treating our own paste as a user Cmd+V (which
-        // would suppress repeat pastes — the "transcribes but doesn't paste" bug).
-        let cmdDown = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: true)
-        cmdDown?.flags = .maskCommand
-        cmdDown?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
-        cmdDown?.post(tap: .cghidEventTap)
-
-        usleep(50000)
-
-        let vDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true)
-        vDown?.flags = .maskCommand
-        vDown?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
-        vDown?.post(tap: .cghidEventTap)
-
-        usleep(50000)
-
-        let vUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
-        vUp?.flags = .maskCommand
-        vUp?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
-        vUp?.post(tap: .cghidEventTap)
-
-        usleep(50000)
-
-        let cmdUp = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: false)
-        cmdUp?.setIntegerValueField(.eventSourceUserData, value: kSyntheticEventMarker)
-        cmdUp?.post(tap: .cghidEventTap)
+    private func deliver(_ cleaned: String) {
+        // Type the text directly via CGEventKeyboardSetUnicodeString instead of a
+        // synthetic Cmd+V. Verified (injection test) to be reliable even while a
+        // trigger key is physically held, and it doesn't drop in Chrome/Electron the
+        // way paste does. Keep the transcript on the clipboard too for manual re-paste.
+        TextInjector.typeUnicode(cleaned + " ", pid: nil)
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(cleaned, forType: .string)
+        fireEnterIfArmed()
     }
 }

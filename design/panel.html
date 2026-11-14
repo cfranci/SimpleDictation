@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SimpleDictation design panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:#101114;color:#e9eaee;font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased;padding-bottom:120px}
+a{color:inherit}
+.page{max-width:1280px;margin:0 auto;padding:0 28px}
+.top{padding:56px 0 28px}
+.top h1{font-size:34px;letter-spacing:-.02em;margin:0 0 10px;font-weight:700}
+.top p{color:#9fa3ad;max-width:70ch;margin:0 0 8px}
+.jump{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+.jump a{text-decoration:none;border:1px solid #2c2f37;border-radius:999px;padding:7px 14px;font-size:13px;color:#c9ccd4}
+.jump a:hover{border-color:#6b7080;color:#fff}
+.jump a b{color:#fff}
+
+/* today strip */
+.today{border:1px solid #2a2d35;border-radius:16px;padding:22px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center;background:#16181d;margin-bottom:44px}
+.today img{width:104px;height:104px;display:block}
+.today h2{margin:0 0 6px;font-size:16px}
+.today ul{margin:0;padding-left:18px;color:#a9adb7;font-size:14px}
+.today li{margin:2px 0}
+
+/* board */
+.board{border-radius:22px;overflow:hidden;margin-bottom:56px;border:1px solid #2a2d35;scroll-margin-top:16px}
+.bhead{background:#16181d;padding:22px 26px;display:grid;grid-template-columns:auto 1fr auto;gap:20px;align-items:center;border-bottom:1px solid #2a2d35}
+.letter{width:46px;height:46px;border-radius:12px;background:#fff;color:#101114;display:grid;place-items:center;font-weight:800;font-size:22px}
+.bhead h2{margin:0;font-size:22px;letter-spacing:-.01em}
+.bhead p{margin:3px 0 0;color:#a9adb7;font-size:14px;max-width:78ch}
+.rec-badge{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:#e9eaee;color:#101114;border-radius:999px;padding:5px 11px;white-space:nowrap}
+.meta{background:#16181d;padding:14px 26px;display:grid;grid-template-columns:1fr 1fr;gap:24px;font-size:13px;color:#a9adb7;border-bottom:1px solid #2a2d35}
+.meta b{color:#e9eaee;font-weight:600}
+.picks{background:#16181d;padding:16px 26px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;border-top:1px solid #2a2d35}
+.picks span{color:#8b8f99;font-size:13px;margin-right:4px}
+.picks button{font:inherit;font-size:13px;font-weight:600;color:#e9eaee;background:#22252c;border:1px solid #363a44;border-radius:10px;padding:9px 14px;cursor:pointer}
+.picks button:hover{border-color:#7d8291}
+.picks button.on{background:#e9eaee;color:#101114;border-color:#e9eaee}
+.picks button:focus-visible,.bar button:focus-visible{outline:2px solid #8ab4ff;outline-offset:2px}
+
+/* themed canvas: everything below reads the direction's variables */
+.canvas{background:var(--bg);color:var(--ink);font-family:var(--fb);padding:26px;display:grid;gap:22px;grid-template-columns:300px 1fr}
+.canvas .row2{grid-column:1/-1;display:grid;grid-template-columns:1.15fr 1fr .8fr;gap:22px}
+.lab{font:600 10.5px/1 var(--fm);letter-spacing:.1em;text-transform:uppercase;color:var(--mu);margin:0 0 10px}
+.cell{background:var(--sf);border:1px solid var(--ln);border-radius:var(--r);padding:18px;min-width:0}
+
+/* identity column */
+.ident{display:grid;gap:22px;align-content:start}
+.icons{display:flex;align-items:flex-end;gap:16px}
+.ic{width:1em;height:1em;border-radius:.225em;position:relative;flex:none;overflow:hidden}
+.ic svg{position:absolute}
+.sw{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.sw i{display:block;height:44px;border-radius:8px;border:1px solid rgba(128,128,128,.25)}
+.sw span{display:block;font:500 9.5px/1.3 var(--fm);color:var(--mu);margin-top:5px;word-break:break-all}
+.spec .d{font-family:var(--fd);font-size:30px;line-height:1.05;letter-spacing:var(--trk,-.02em);font-weight:var(--dw,700);font-style:var(--dst,normal);font-stretch:var(--dwd,100%)}
+.spec .b{font-size:14px;color:var(--mu);margin-top:8px}
+.spec .m{font:500 11px var(--fm);color:var(--mu);margin-top:8px}
+
+/* browser mock */
+.browser{border:1px solid var(--ln);border-radius:14px;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;min-height:440px}
+.bbar{display:flex;align-items:center;gap:7px;padding:10px 12px;background:var(--sf);border-bottom:1px solid var(--ln)}
+.tl{width:10px;height:10px;border-radius:50%;background:#ff5f57}.tl+.tl{background:#febc2e}.tl+.tl+.tl{background:#28c840}
+.url{margin-left:10px;flex:1;max-width:300px;font:500 11px var(--fm);color:var(--mu);background:var(--bg);border:1px solid var(--ln);border-radius:7px;padding:4px 10px}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:14px 26px;font-size:13px}
+.nav .brand{display:flex;align-items:center;gap:9px;font-weight:650;font-family:var(--fd)}
+.nav .links{display:flex;gap:18px;color:var(--mu);align-items:center}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--ac);color:var(--acink);font:600 13px var(--fb);padding:10px 16px;border-radius:var(--br,10px);border:0;white-space:nowrap}
+.btn.sm{padding:7px 12px;font-size:12px}
+.btn.ghost{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--ln)}
+.hero{flex:1;padding:22px 26px 30px;display:grid;gap:26px;align-items:center}
+.hero h3{font-family:var(--fd);font-weight:var(--dw,700);font-style:var(--dst,normal);font-stretch:var(--dwd,100%);letter-spacing:var(--trk,-.02em);line-height:1.02;margin:0;font-size:46px}
+.hero p{color:var(--mu);margin:14px 0 0;max-width:42ch;font-size:15px}
+.hero .cta{display:flex;gap:10px;margin-top:20px;align-items:center;flex-wrap:wrap}
+.hero .fine{font:500 11px var(--fm);color:var(--mu)}
+.caret{display:inline-block;width:2px;height:1em;background:var(--ac);vertical-align:-.12em;margin-left:2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* settings window mock */
+.win{border-radius:12px;overflow:hidden;border:1px solid var(--ln);background:var(--sf);box-shadow:0 18px 40px -22px rgba(0,0,0,.45)}
+.wbar{display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid var(--ln);position:relative}
+.wbar b{position:absolute;left:0;right:0;text-align:center;font-size:12px;font-weight:600;pointer-events:none}
+.wbody{padding:20px 22px}
+.wbody h4{margin:10px 0 2px;font-family:var(--fd);font-size:19px;letter-spacing:-.01em;font-weight:var(--dw,700);font-style:var(--dst,normal)}
+.wbody .sub{color:var(--mu);font-size:12.5px;margin:0 0 14px}
+.glyph{width:34px;height:34px;border-radius:9px;background:var(--tint);color:var(--ac);display:grid;place-items:center}
+.opt{border:1px solid var(--ln);border-radius:10px;padding:11px 13px;margin-bottom:8px;display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:start;font-size:12.5px}
+.opt.sel{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac);background:var(--tint)}
+.opt i{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--mu);margin-top:2px}
+.opt.sel i{border:4.5px solid var(--ac)}
+.opt b{display:block;font-size:13px}
+.opt span{color:var(--mu)}
+.wfoot{display:flex;justify-content:space-between;align-items:center;padding:12px 22px;border-top:1px solid var(--ln);font:500 11px var(--fm);color:var(--mu)}
+.wfoot div{display:flex;gap:8px}
+kbd{font:600 10.5px var(--fm);border:1px solid var(--ln);border-bottom-width:2px;border-radius:5px;padding:1px 6px;background:var(--bg);color:var(--ink)}
+
+/* desktop HUD mock */
+.desk{border-radius:12px;overflow:hidden;border:1px solid var(--ln);background:var(--wall);position:relative;min-height:290px;display:flex;flex-direction:column}
+.mbar{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:5px 12px;background:rgba(255,255,255,.18);backdrop-filter:blur(8px);font:600 11px -apple-system,sans-serif;color:var(--mbink,#fff)}
+.mbar svg{width:14px;height:14px}
+.pill{position:absolute;right:26px;top:74px;width:58px;height:58px;border-radius:50%;background:var(--recbg);display:grid;place-items:center;color:var(--recink,#fff);box-shadow:0 0 0 5px var(--recring),0 12px 28px -8px rgba(0,0,0,.5);animation:breathe 1.8s ease-in-out infinite}
+.pill svg{width:24px;height:24px}
+@keyframes breathe{50%{box-shadow:0 0 0 10px transparent,0 12px 28px -8px rgba(0,0,0,.5)}}
+.cap{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);background:var(--capbg);color:var(--capink);font:var(--capfont);padding:9px 16px;border-radius:var(--capr,12px);white-space:nowrap;max-width:88%;overflow:hidden;text-overflow:ellipsis}
+.doc{margin:26px 100px 0 22px;background:rgba(255,255,255,.92);border-radius:8px;padding:14px;color:#222;font:13px/1.5 -apple-system,sans-serif;box-shadow:0 10px 24px -14px rgba(0,0,0,.5)}
+.doc u{text-decoration:none;background:var(--docmark,transparent)}
+
+/* buy card */
+.buy{display:flex;flex-direction:column;gap:6px}
+.buy .amt{font-family:var(--fd);font-size:58px;line-height:1;font-weight:var(--dw,700);font-style:var(--dst,normal);font-stretch:var(--dwd,100%);letter-spacing:-.03em}
+.buy .once{font:500 11px var(--fm);color:var(--mu);letter-spacing:.08em;text-transform:uppercase}
+.buy ul{list-style:none;padding:0;margin:10px 0 14px;font-size:13px;color:var(--mu);display:grid;gap:6px}
+.buy li::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ac);margin-right:9px;vertical-align:2px}
+.buy .btn{justify-content:center}
+
+/* ---------- direction tokens ---------- */
+.d-A{--bg:#F5F5F7;--sf:#FFFFFF;--ink:#1D1D1F;--mu:#6E6E73;--ln:#D9D9DE;--ac:#5E5CE6;--acink:#fff;--tint:#EEEEFD;
+ --fd:-apple-system,"SF Pro Display","Helvetica Neue",sans-serif;--fb:-apple-system,"SF Pro Text","Helvetica Neue",sans-serif;--fm:"SF Mono",ui-monospace,Menlo,monospace;
+ --r:16px;--br:980px;--dw:650;--trk:-.03em;
+ --wall:linear-gradient(140deg,#B9B8F5,#7D7AFF 45%,#2E2C8A);--recbg:#5E5CE6;--recring:rgba(94,92,230,.35);
+ --capbg:rgba(30,30,32,.78);--capink:#fff;--capfont:500 14px -apple-system,sans-serif;--capr:999px}
+.d-B{--bg:#090D1E;--sf:#111732;--ink:#EEF1FF;--mu:#8D95BC;--ln:#242C55;--ac:#FFFFFF;--acink:#090D1E;--tint:rgba(255,255,255,.06);
+ --spec:conic-gradient(from 210deg,#FF5E7A,#FFB457,#F6F06D,#5BE49B,#4CC9F0,#8B7BFF,#FF5E7A);
+ --fd:"Bricolage Grotesque",sans-serif;--fb:"Geist",sans-serif;--fm:"Geist Mono",monospace;
+ --r:18px;--br:12px;--dw:700;--trk:-.035em;
+ --wall:radial-gradient(120% 90% at 80% 0%,#27306B,#0B1028 60%);--recbg:var(--spec);--recring:rgba(139,123,255,.35);--recink:#090D1E;
+ --capbg:rgba(9,13,30,.82);--capink:#EEF1FF;--capfont:500 14px "Geist",sans-serif}
+.d-C{--bg:#DDDAD3;--sf:#EDEBE5;--ink:#151515;--mu:#66635C;--ln:#B9B5AB;--ac:#FF4A12;--acink:#151515;--tint:rgba(255,74,18,.09);
+ --fd:"Archivo",sans-serif;--fb:"IBM Plex Sans",sans-serif;--fm:"IBM Plex Mono",monospace;
+ --r:6px;--br:6px;--dw:800;--dwd:118%;--trk:-.025em;
+ --wall:linear-gradient(160deg,#55524C,#26251F);--recbg:#FF4A12;--recring:rgba(255,74,18,.35);--recink:#151515;
+ --capbg:#151515;--capink:#F2F0EA;--capfont:500 12.5px "IBM Plex Mono",monospace;--capr:4px}
+.d-D{--bg:#F6F8FA;--sf:#FFFFFF;--ink:#0E1B2C;--mu:#5A6677;--ln:#D4DBE3;--ac:#0E1B2C;--acink:#FFE94A;--tint:#FFF7B8;
+ --fd:"Newsreader",serif;--fb:"Geist",sans-serif;--fm:"Geist Mono",monospace;
+ --r:4px;--br:4px;--dw:500;--dst:italic;--trk:-.02em;
+ --wall:linear-gradient(150deg,#DCE6F2,#9FB4CE);--mbink:#0E1B2C;--recbg:#FFE94A;--recring:rgba(255,233,74,.5);--recink:#0E1B2C;
+ --capbg:#FFE94A;--capink:#0E1B2C;--capfont:italic 500 17px "Newsreader",serif;--capr:2px;--docmark:#FFE94A}
+
+/* icons */
+.icA{background:linear-gradient(160deg,#8E8BFF,#5E5CE6 50%,#3432A8);box-shadow:inset 0 .012em 0 rgba(255,255,255,.4)}
+.icB{background:radial-gradient(circle at 50% 35%,#18204A,#070A19)}
+.icB::before{content:"";position:absolute;inset:.15em;border-radius:50%;background:conic-gradient(from 210deg,#FF5E7A,#FFB457,#F6F06D,#5BE49B,#4CC9F0,#8B7BFF,#FF5E7A);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - .085em),#000 calc(100% - .078em));mask:radial-gradient(farthest-side,transparent calc(100% - .085em),#000 calc(100% - .078em))}
+.icC{background:linear-gradient(180deg,#2E2D2A,#0F0F0E)}
+.icC .key{position:absolute;left:.15em;right:.15em;top:.13em;bottom:.2em;border-radius:.11em;background:linear-gradient(180deg,#FBFAF6,#DFDCD3);box-shadow:0 .055em 0 #A39F94,0 .1em .09em rgba(0,0,0,.6)}
+.icC .fn{position:absolute;left:2.2em;bottom:2.7em;font:600 .105em/1 "IBM Plex Mono",monospace;color:#151515}
+.icC .led{position:absolute;right:.235em;top:.21em;width:.058em;height:.058em;border-radius:50%;background:#FF4A12}
+.icD{background:#FFE94A}
+.icD b{position:absolute;bottom:.5em;transform:translateY(50%);width:.07em;border-radius:.04em;background:#0E1B2C}
+.icD .ib{position:absolute;left:.66em;top:.24em;width:.06em;height:.52em;background:#0E1B2C;border-radius:.02em}
+.icD .ib::before,.icD .ib::after{content:"";position:absolute;left:-.07em;width:.2em;height:.055em;background:#0E1B2C;border-radius:.02em}
+.icD .ib::before{top:0}.icD .ib::after{bottom:0}
+
+/* hero signatures */
+.hA{text-align:center;justify-items:center}
+.hA p{margin-inline:auto}.hA .cta{justify-content:center}
+.field{display:flex;align-items:center;gap:10px;background:var(--sf);border:1px solid var(--ln);border-radius:14px;padding:13px 16px;font-size:15px;min-width:min(440px,100%);text-align:left;box-shadow:0 14px 30px -20px rgba(0,0,0,.35)}
+.field .dot{width:26px;height:26px;border-radius:50%;background:var(--recbg);flex:none;display:grid;place-items:center;color:var(--recink,#fff)}
+.field .dot svg{width:13px;height:13px}
+.hB{grid-template-columns:1fr auto}
+.ring{width:210px;height:210px;border-radius:50%;background:var(--spec);display:grid;place-items:center;position:relative;animation:spin 14s linear infinite}
+.ring::after{content:"";position:absolute;inset:-18px;border-radius:50%;background:var(--spec);filter:blur(34px);opacity:.35;z-index:0}
+.ring>div{position:relative;z-index:1;width:178px;height:178px;border-radius:50%;background:#090D1E;display:grid;place-items:center;animation:spin 14s linear infinite reverse;text-align:center;padding:0 22px;font:500 14px/1.35 "Geist",sans-serif;color:#EEF1FF}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hC{grid-template-columns:auto 1fr;gap:34px}
+.bigkey{width:176px;height:176px;border-radius:20px;background:linear-gradient(180deg,#FBFAF6,#E3E0D7);box-shadow:0 12px 0 #A39F94,0 22px 26px -6px rgba(0,0,0,.45);position:relative;animation:press 4.5s ease-in-out infinite}
+.bigkey span{position:absolute;left:18px;bottom:16px;font:600 19px "IBM Plex Mono",monospace}
+.bigkey svg{position:absolute;right:16px;top:16px;width:30px;height:30px}
+.bigkey i{position:absolute;left:18px;top:20px;width:9px;height:9px;border-radius:50%;background:#B9B5AB;animation:led 4.5s ease-in-out infinite}
+@keyframes press{0%,18%,72%,100%{transform:none;box-shadow:0 12px 0 #A39F94,0 22px 26px -6px rgba(0,0,0,.45)}26%,64%{transform:translateY(9px);box-shadow:0 3px 0 #A39F94,0 8px 12px -6px rgba(0,0,0,.45)}}
+@keyframes led{0%,18%,72%,100%{background:#B9B5AB;box-shadow:none}26%,64%{background:#FF4A12;box-shadow:0 0 10px #FF4A12}}
+.hC h3{text-transform:uppercase;font-size:52px;line-height:.92}
+.tape{margin-top:16px;border-top:1px solid var(--ln);border-bottom:1px solid var(--ln);padding:9px 0;font:500 12.5px var(--fm);display:flex;gap:12px}
+.tape em{font-style:normal;color:var(--ac);font-weight:600}
+.hD h3{font-size:56px;line-height:1.04;max-width:15ch}
+.hD h3 mark{background:linear-gradient(#FFE94A,#FFE94A) left 62%/0% 46% no-repeat;color:inherit;animation:hl 5s ease-in-out infinite}
+@keyframes hl{0%,10%{background-size:0% 46%}45%,90%{background-size:100% 46%}100%{background-size:0% 46%}}
+.hD .rule{font:500 11px var(--fm);color:var(--mu);letter-spacing:.08em;text-transform:uppercase;display:flex;gap:14px;align-items:center}
+.hD .rule::after{content:"";flex:1;height:1px;background:var(--ln)}
+
+/* sticky bar */
+.bar{position:fixed;left:0;right:0;bottom:0;background:rgba(22,24,29,.94);backdrop-filter:blur(14px);border-top:1px solid #2f323b;padding:14px 28px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;z-index:20}
+.bar .sum{display:flex;gap:18px;font-size:14px;flex-wrap:wrap}
+.bar .sum span{color:#8b8f99}.bar .sum b{color:#fff}
+.bar input{flex:1;min-width:220px;font:inherit;font-size:14px;background:#0f1013;border:1px solid #363a44;border-radius:10px;color:#fff;padding:10px 12px}
+.bar button{font:inherit;font-weight:650;font-size:14px;background:#fff;color:#101114;border:0;border-radius:10px;padding:10px 18px;cursor:pointer}
+
+@media(max-width:1080px){.canvas{grid-template-columns:1fr}.canvas .row2{grid-template-columns:1fr}.meta{grid-template-columns:1fr}.hB,.hC{grid-template-columns:1fr}.bhead{grid-template-columns:auto 1fr}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}.hD h3 mark{background-size:100% 46%}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <h1>SimpleDictation design panel</h1>
+    <p>Four complete identities for the launch. Each one shows the same five things so you can compare like for like: app icon, landing page hero, the Settings window, the floating mic and caption on a desktop, and the buy card.</p>
+    <p>Pick a whole direction, or mix (icon from one, site from another). Your picks collect in the bar at the bottom. Hit Copy and paste them back to me.</p>
+    <div class="jump" id="jump"></div>
+  </div>
+
+  <div class="today">
+    <img src="../icon_1024.png" alt="Current SimpleDictation icon">
+    <div>
+      <h2>Where it stands today: three different looks</h2>
+      <ul>
+        <li>The icon is a full-saturation rainbow.</li>
+        <li>The website is near-black with an orange glow, and its favicon is an orange mic, not the icon.</li>
+        <li>The app uses stock macOS controls with a rainbow recording dot.</li>
+      </ul>
+      <p style="margin:8px 0 0;color:#a9adb7;font-size:14px">Nothing is broken. It just reads as three products. Every option below makes icon, site, and app one thing.</p>
+    </div>
+  </div>
+
+  <div id="boards"></div>
+</div>
+
+<div class="bar">
+  <div class="sum">
+    <span>Icon <b id="s-icon">none</b></span>
+    <span>Site <b id="s-site">none</b></span>
+    <span>App <b id="s-app">none</b></span>
+  </div>
+  <input id="notes" placeholder="Notes (optional): what to change, what you hate, what to steal from another option" aria-label="Notes">
+  <button id="copy">Copy my picks</button>
+</div>
+
+<script>
+const MIC='<svg viewBox="0 0 24 24" fill="none"><path d="M12 3a2.4 2.4 0 0 0-2.4 2.4v6a2.4 2.4 0 0 0 4.8 0v-6A2.4 2.4 0 0 0 12 3z" fill="currentColor"/><path d="M6.5 11.4a5.5 5.5 0 0 0 11 0M12 16.9V20M9 20h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const micAt=(c,s)=>MIC.replace('<svg','<svg style="color:'+c+';width:'+s+'em;height:'+s+'em;left:'+(.5-s/2)+'em;top:'+(.5-s/2)+'em"');
+
+const D=[
+{id:'A',name:'Quiet Mac',rec:false,
+ thesis:'Looks like Apple shipped it. System type, one indigo accent, soft white surfaces, pill buttons.',
+ best:'Trust on first sight. Mac buyers read this as safe to install and grant Accessibility to.',
+ risk:'Least memorable in a screenshot. Leans on the $4.20 and the demo to stand out.',
+ icon:'<div class="ic icA">'+micAt('#fff',.46)+'</div>',
+ sw:[['#F5F5F7','Mist'],['#FFFFFF','Surface'],['#1D1D1F','Ink'],['#5E5CE6','Indigo'],['#6E6E73','Gray']],
+ type:['Your words appear.','SF Pro Display and Text. The system face, so the site and the app are literally the same type.','SF Pro / SF Mono'],
+ hero:'<div class="hero hA"><div><h3>Hold a key. Talk.<br>Your words appear.</h3><p>Voice to text for every app on your Mac. It runs on your Mac, so your voice never leaves it.</p><div class="cta"><span class="btn">Buy for $4.20</span><span class="btn ghost">Watch it work</span></div></div><div class="field"><span class="dot">'+MIC+'</span><span><span class="typer"></span><span class="caret"></span></span></div></div>'},
+{id:'B',name:'Spectrum',rec:false,
+ thesis:'Keeps the rainbow you already have, but grown up. Deep navy everywhere, and the spectrum only ever appears as one thin ring: the thing that is listening.',
+ best:'Continuity. Current users recognize it, and the multicolor recording dot becomes the brand instead of a setting.',
+ risk:'Dark plus glow is a crowded look in AI tools. The ring has to carry it.',
+ icon:'<div class="ic icB">'+micAt('#fff',.36)+'</div>',
+ sw:[['#090D1E','Night'],['#111732','Panel'],['#EEF1FF','Paper'],['#8B7BFF','Violet'],['#5BE49B','Mint']],
+ type:['The words just appear.','Bricolage Grotesque for headlines, Geist for everything you read. Friendly, a little odd, very legible.','Bricolage Grotesque / Geist / Geist Mono'],
+ hero:'<div class="hero hB"><div><h3>Hold to talk.<br>The words just appear.</h3><p>On-device voice to text for Mac. Works offline, in any app, with no account.</p><div class="cta"><span class="btn">Buy for $4.20</span><span class="fine">once, not $15 a month</span></div></div><div class="ring"><div><span><span class="typer"></span><span class="caret"></span></span></div></div></div>'},
+{id:'C',name:'Keycap',rec:true,
+ thesis:'The product is one key, so the brand is one key. Putty, black, and a single record-light orange, with hardware-style labels. The icon is an fn keycap, not another microphone.',
+ best:'Standing out. Every competitor icon is a mic or a waveform. This one explains the app before anyone reads a word.',
+ risk:'Most opinionated. The app Settings get squarer and more utilitarian than stock macOS.',
+ icon:'<div class="ic icC"><div class="key"></div>'+micAt('#151515',.3).replace('top:0.35em','top:.27em')+'<span class="fn">fn</span><span class="led"></span></div>',
+ sw:[['#DDDAD3','Putty'],['#EDEBE5','Shell'],['#151515','Black'],['#FF4A12','Record'],['#66635C','Label']],
+ type:['HOLD. TALK. DONE.','Archivo, wide and heavy, for headlines. IBM Plex Sans to read, Plex Mono for labels and numbers.','Archivo Expanded / IBM Plex Sans / IBM Plex Mono'],
+ hero:'<div class="hero hC"><div class="bigkey"><i></i>'+MIC+'<span>fn</span></div><div><h3>Hold. Talk.<br>Release. Done.</h3><div class="tape"><em>REC</em><span><span class="typer"></span><span class="caret"></span></span></div><div class="cta"><span class="btn">Buy for $4.20</span><span class="fine">ONE PAYMENT. NO ACCOUNT.</span></div></div></div>'},
+{id:'D',name:'Transcript',rec:false,
+ thesis:'The words are the hero, not the microphone. Cool white paper, navy ink, and a yellow highlighter that marks whatever you just said.',
+ best:'Writers, lawyers, students, anyone who thinks of this as writing rather than tech. Warmest and most human.',
+ risk:'Reads less like a Mac utility. Yellow needs discipline or it turns into a sticky note.',
+ icon:'<div class="ic icD"><b style="left:.2em;height:.2em"></b><b style="left:.32em;height:.4em"></b><b style="left:.44em;height:.27em"></b><span class="ib"></span></div>',
+ sw:[['#F6F8FA','Paper'],['#FFFFFF','Sheet'],['#0E1B2C','Ink'],['#FFE94A','Marker'],['#5A6677','Pencil']],
+ type:['Say it, and it is written.','Newsreader italic for anything spoken. Geist for the interface. The italic means "this came from your voice."','Newsreader Italic / Geist / Geist Mono'],
+ hero:'<div class="hero hD"><div class="rule">On-device voice to text for Mac</div><div><h3>Say it, and <mark>it is written.</mark></h3><p>Hold a key and talk. Your words land wherever your cursor is, and your voice never leaves your Mac.</p><div class="cta"><span class="btn">Buy for $4.20, once</span><span class="btn ghost">See how it works</span></div></div></div>'}
+];
+
+function board(d){
+  const smIcon=(px)=>d.icon.replace('class="ic ','style="font-size:'+px+'px" class="ic ');
+  return `
+<section class="board" id="dir-${d.id}">
+  <div class="bhead">
+    <div class="letter">${d.id}</div>
+    <div><h2>${d.name}</h2><p>${d.thesis}</p></div>
+    ${d.rec?'<span class="rec-badge">My recommendation</span>':''}
+  </div>
+  <div class="meta"><div><b>Best for:</b> ${d.best}</div><div><b>Trade-off:</b> ${d.risk}</div></div>
+  <div class="canvas d-${d.id}">
+    <div class="ident">
+      <div><p class="lab">App icon</p><div class="icons">${smIcon(132)}${smIcon(56)}${smIcon(28)}</div></div>
+      <div><p class="lab">Palette</p><div class="sw">${d.sw.map(s=>`<div><i style="background:${s[0]}"></i><span>${s[1]}<br>${s[0]}</span></div>`).join('')}</div></div>
+      <div class="spec"><p class="lab">Type</p><div class="d">${d.type[0]}</div><div class="b">${d.type[1]}</div><div class="m">${d.type[2]}</div></div>
+    </div>
+    <div>
+      <p class="lab">Landing page</p>
+      <div class="browser">
+        <div class="bbar"><span class="tl"></span><span class="tl"></span><span class="tl"></span><span class="url">simpledictation.app</span></div>
+        <div class="nav"><span class="brand">${smIcon(22)} SimpleDictation</span><span class="links"><span>How it works</span><span>Engines</span><span>Privacy</span><span class="btn sm">Buy for $4.20</span></span></div>
+        ${d.hero}
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <p class="lab">Settings window</p>
+        <div class="win">
+          <div class="wbar"><span class="tl"></span><span class="tl"></span><span class="tl"></span><b>SimpleDictation Settings</b></div>
+          <div class="wbody">
+            <div class="glyph">${MIC.replace('<svg','<svg width="18" height="18"')}</div>
+            <h4>Trigger mode</h4>
+            <p class="sub">How you start and stop dictation.</p>
+            <div class="opt sel"><i></i><div><b>Hold to talk</b><span>Hold <kbd>fn</kbd> while you speak. Let go and the text appears.</span></div></div>
+            <div class="opt"><i></i><div><b>Hands-free</b><span>Triple-tap to start, tap once to stop.</span></div></div>
+          </div>
+          <div class="wfoot"><span>4 of 11</span><div><span class="btn sm ghost">Back</span><span class="btn sm">Next</span></div></div>
+        </div>
+      </div>
+      <div>
+        <p class="lab">Floating mic and live caption</p>
+        <div class="desk">
+          <div class="mbar">${MIC}<span>Tue 9:41 AM</span></div>
+          <div class="doc">Hey, <u>running five minutes late, see you soon</u></div>
+          <div class="pill">${MIC}</div>
+          <div class="cap">running five minutes late, see you soon</div>
+        </div>
+      </div>
+      <div>
+        <p class="lab">Buy card</p>
+        <div class="cell buy">
+          <span class="once">One payment</span>
+          <span class="amt">$4.20</span>
+          <ul><li>Works in every Mac app</li><li>Runs offline, on your Mac</li><li>No account, no subscription</li></ul>
+          <span class="btn">Buy SimpleDictation</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="picks" data-id="${d.id}">
+    <span>Use ${d.id} for:</span>
+    <button data-k="all">Everything</button>
+    <button data-k="icon">Icon</button>
+    <button data-k="site">Site</button>
+    <button data-k="app">App</button>
+  </div>
+</section>`;
+}
+document.getElementById('boards').innerHTML=D.map(board).join('');
+document.getElementById('jump').innerHTML=D.map(d=>`<a href="#dir-${d.id}"><b>${d.id}</b> ${d.name}${d.rec?' (recommended)':''}</a>`).join('');
+
+/* picks */
+const KEY='sd-design-picks';
+let st=JSON.parse(localStorage.getItem(KEY)||'{}');
+const nm=id=>id?id+' '+D.find(d=>d.id===id).name:'none';
+function paint(){
+  ['icon','site','app'].forEach(k=>document.getElementById('s-'+k).textContent=nm(st[k]));
+  document.querySelectorAll('.picks').forEach(p=>{
+    const id=p.dataset.id;
+    p.querySelectorAll('button').forEach(b=>{
+      const k=b.dataset.k;
+      const on=k==='all'?(st.icon===id&&st.site===id&&st.app===id):st[k]===id;
+      b.classList.toggle('on',on);b.setAttribute('aria-pressed',on);
+    });
+  });
+  document.getElementById('notes').value=st.notes||'';
+  localStorage.setItem(KEY,JSON.stringify(st));
+}
+document.getElementById('boards').addEventListener('click',e=>{
+  const b=e.target.closest('.picks button');if(!b)return;
+  const id=b.closest('.picks').dataset.id,k=b.dataset.k;
+  if(k==='all'){st.icon=st.site=st.app=id}else{st[k]=st[k]===id?null:id}
+  paint();
+});
+document.getElementById('notes').addEventListener('input',e=>{st.notes=e.target.value;localStorage.setItem(KEY,JSON.stringify(st))});
+document.getElementById('copy').addEventListener('click',e=>{
+  const t='SimpleDictation design picks\nIcon: '+nm(st.icon)+'\nSite: '+nm(st.site)+'\nApp: '+nm(st.app)+(st.notes?'\nNotes: '+st.notes:'');
+  navigator.clipboard.writeText(t).then(()=>{e.target.textContent='Copied';setTimeout(()=>e.target.textContent='Copy my picks',1400)});
+});
+paint();
+
+/* typing loop */
+const phrases=['Running five minutes late, see you soon','Let me know if that works for you','I will have this done by end of day'];
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.querySelectorAll('.typer').forEach((el,n)=>{
+  if(reduce){el.textContent=phrases[0];return}
+  let p=n%phrases.length,i=0;
+  (function tick(){
+    const t=phrases[p];
+    if(i<=t.length){el.textContent=t.slice(0,i++);setTimeout(tick,45)}
+    else setTimeout(()=>{i=0;p=(p+1)%phrases.length;tick()},2200);
+  })();
+});
+</script>
+</body>
+</html>
