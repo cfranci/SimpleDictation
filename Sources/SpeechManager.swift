@@ -171,9 +171,10 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        // Match VNOCH: allow server fallback so partials stream smoothly
-        // word-by-word (on-device tends to deliver delayed/chunky results).
-        request.requiresOnDeviceRecognition = false
+        // Keep audio on this Mac whenever Apple has an on-device model for the
+        // language. Only languages without one fall back to Apple's servers.
+        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+        request.contextualStrings = TextPolish.vocabulary
         request.addsPunctuation = true
         captionRecognizer = recognizer
         captionRequest = request
@@ -421,6 +422,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         }
 
         recognitionRequest.shouldReportPartialResults = true
+        recognitionRequest.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+        recognitionRequest.contextualStrings = TextPolish.vocabulary
         if #available(macOS 13.0, *) {
             recognitionRequest.addsPunctuation = true
         }
@@ -599,6 +602,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         // so buffers immediately flow to the new request with no gap.
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+        request.contextualStrings = TextPolish.vocabulary
         if #available(macOS 13.0, *) {
             request.addsPunctuation = true
         }
@@ -754,7 +759,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         isProcessing = true
         DispatchQueue.global(qos: .userInteractive).async { [weak self] in
             guard let self = self else { return }
-            let text = self.whistleManager.transcribe(samples: samples, language: nil)
+            let text = self.whistleManager.transcribe(samples: samples, language: nil, keywords: SpeechManager.whistleKeywords)
             DispatchQueue.main.async {
                 guard !text.isEmpty, !self.isSilenceHallucination(text) else {
                     self.isProcessing = false
@@ -876,7 +881,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         if isWhistleEngine {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self = self else { return }
-                let text = self.whistleManager.transcribe(samples: samples, language: nil)
+                let text = self.whistleManager.transcribe(samples: samples, language: nil, keywords: SpeechManager.whistleKeywords)
                 DispatchQueue.main.async {
                     self.isIncrementalTranscribing = false
                     guard self.whisperSessionID == sessionID, self.isRecording, !text.isEmpty else { return }
@@ -926,6 +931,7 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(cleaned, forType: .string)
+        fireEnterIfArmed()
     }
 
     private func stopWhisperRecording() {
@@ -1228,6 +1234,36 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
 
     // MARK: - Keypress Helpers
 
+    // "Send" gesture support: Return must land after the dictated text, which
+    // is typed asynchronously once transcription finishes.
+    private var enterArmedUntil: Date?
+    private let enterLock = NSLock()
+
+    /// Press Return once the dictation now finishing has been typed. If nothing
+    /// gets typed within `seconds`, nothing is pressed.
+    func pressEnterAfterDelivery(within seconds: TimeInterval = 10) {
+        enterLock.lock(); enterArmedUntil = Date().addingTimeInterval(seconds); enterLock.unlock()
+    }
+
+    func cancelPendingEnter() {
+        enterLock.lock(); enterArmedUntil = nil; enterLock.unlock()
+    }
+
+    /// Return now, or after the text if a transcription is still in flight.
+    func sendReturn() {
+        if isProcessing { pressEnterAfterDelivery() } else { pressEnter() }
+    }
+
+    private func fireEnterIfArmed() {
+        enterLock.lock()
+        let armed = enterArmedUntil.map { $0 > Date() } ?? false
+        enterArmedUntil = nil
+        enterLock.unlock()
+        guard armed else { return }
+        // Give the app a beat to take in the typed characters first.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.pressEnter() }
+    }
+
     func pressEnter() {
         // Use privateState so modifiers (fn/option) held by the user
         // don't turn this into Option+Return (newline) instead of Return (submit)
@@ -1238,6 +1274,12 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         let up = CGEvent(keyboardEventSource: src, virtualKey: 36, keyDown: false)
         up?.flags = []
         up?.post(tap: .cghidEventTap)
+    }
+
+    /// Custom-dictionary words as Whistle expects them: newline-separated, or nil.
+    static var whistleKeywords: String? {
+        let words = TextPolish.vocabulary
+        return words.isEmpty ? nil : words.joined(separator: "\n")
     }
 
     // MARK: - Paste
@@ -1268,7 +1310,8 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             let before = String(s[s.startIndex..<r.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
             if before.count >= 12 { s = before }
         }
-        return s
+        // Filler removal and the user's custom dictionary (both on-device rules).
+        return TextPolish.apply(s)
     }
 
     func pasteText(_ text: String) {
@@ -1277,6 +1320,19 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
             slog("pasteText: nothing to paste after stripping annotations from '\(text)'")
             return
         }
+        // Optional on-device language-model pass (Apple Intelligence). Only for a
+        // finished transcript: paste-as-you-speak has already typed the words.
+        if AIPolish.enabled, !incrementalActive, AIPolish.isAvailable {
+            Task { [weak self] in
+                let polished = await AIPolish.polish(cleaned) ?? cleaned
+                await MainActor.run { self?.deliver(polished) }
+            }
+            return
+        }
+        deliver(cleaned)
+    }
+
+    private func deliver(_ cleaned: String) {
         // Type the text directly via CGEventKeyboardSetUnicodeString instead of a
         // synthetic Cmd+V. Verified (injection test) to be reliable even while a
         // trigger key is physically held, and it doesn't drop in Chrome/Electron the
@@ -1285,5 +1341,6 @@ class SpeechManager: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(cleaned, forType: .string)
+        fireEnterIfArmed()
     }
 }

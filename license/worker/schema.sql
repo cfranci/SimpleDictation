@@ -52,3 +52,8 @@ CREATE INDEX IF NOT EXISTS idx_licenses_created  ON licenses(created_at);
 CREATE INDEX IF NOT EXISTS idx_activations_lic   ON activations(license_id);
 CREATE INDEX IF NOT EXISTS idx_activations_time  ON activations(created_at);
 CREATE INDEX IF NOT EXISTS idx_ratelimits_expiry ON rate_limits(expires_at);
+
+-- One Stripe checkout session mints at most one key, even if the webhook is
+-- delivered twice at the same moment. Stripe keys store note = 'stripe cs_...'.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_stripe_note
+  ON licenses(note) WHERE note LIKE 'stripe %';

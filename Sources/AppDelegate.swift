@@ -16,9 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Hands-free ("toggle") trigger-mode state. Taps are counted within a short
     // window and resolved once the sequence settles:
-    //   single tap  -> stop (if listening)
-    //   double tap   -> press Return
-    //   triple tap   -> start hands-free listening (if not already)
+    //   idle:      double tap -> start listening
+    //   listening: single tap -> stop and type; double tap -> stop, type, then Return
     // Edge-detected so duplicate global+local monitor events don't double-count.
     private var hotkeyWasActive = false
     private var togglePressTime: Date = .distantPast
@@ -28,8 +27,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let multiTapWindow: TimeInterval = 0.5
     private var lastTapAt: Date = .distantPast    // debounce duplicate edges from the two monitors
 
+    // Hold-mode Return: two SHORT taps in a row. A real dictation (a long hold)
+    // never counts, so starting a new dictation right after one can't fire Return.
+    private var holdPressTime: Date = .distantPast
+    private var lastShortTapRelease: Date = .distantPast
+    private let shortTapMax: TimeInterval = 0.3
+
     /// "hold" (default: hold key to talk, release to stop) or "toggle"
-    /// (triple-tap to start hands-free, single tap to stop, double-tap for Return).
+    /// (double-tap to start hands-free, single tap to stop, double-tap to stop and press Return).
     var triggerMode: String {
         get { UserDefaults.standard.string(forKey: "triggerMode") ?? "hold" }
         set { UserDefaults.standard.set(newValue, forKey: "triggerMode") }
@@ -73,6 +78,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let ready = speechManager?.readyEngine(preferred: currentEngine), ready != currentEngine {
             NSLog("[SimpleDictation] Startup engine adjusted: %@ -> %@", currentEngine, ready)
             currentEngine = ready
+        }
+        if currentEngine != "apple", !LicenseManager.shared.isUsable {
+            NSLog("[SimpleDictation] Trial ended without a license: using Apple Speech")
+            currentEngine = "apple"
         }
         speechManager?.engineMode = currentEngine
 
@@ -140,7 +149,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController?.onModifiersChanged = { [weak self] (modifiers: Set<String>) in
             self?.enabledModifiers = modifiers
         }
-        statusBarController?.onEngineChanged = { [weak self] (engine: String) in
+        statusBarController?.onEngineChanged = { [weak self] (requested: String) in
+            // License gate: once the trial has ended, only Apple Speech is free.
+            var engine = requested
+            if engine != "apple", !LicenseManager.shared.isUsable {
+                engine = "apple"
+                self?.statusBarController?.currentEngine = engine
+                DictationSettingsStore.shared.setEngineSilently(engine)
+                SettingsWindowController.shared.show(page: .license)
+            }
             self?.currentEngine = engine
             self?.speechManager?.engineMode = engine
             self?.floatingWindow?.updateEngineLabel(engine)
@@ -313,7 +330,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if modifiers.contains("option") && flags.contains(.option) { isHotkeyActive = true }
         if modifiers.contains("command") && flags.contains(.command) { isHotkeyActive = true }
 
-        // Hands-free mode: count taps (single=stop, double=Return, triple=start).
+        // Hands-free mode: count taps (see the tap table above).
         if triggerMode == "toggle" {
             handleToggleTrigger(isActive: isHotkeyActive)
             return
@@ -323,9 +340,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[SimpleDictation] isHotkeyActive=%d isRecording=%d modifiers=%@", isHotkeyActive, speechManager.isRecording, modifiers.joined(separator: ","))
         if isHotkeyActive != speechManager.isRecording {
             if isHotkeyActive {
-                // NOTE: no double-tap-to-Enter here — it fired Return into the user's
-                // app whenever a new dictation started within 400ms of ending one
-                // ("submits without asking"). Starting a new dictation just records.
+                holdPressTime = Date()
                 NSLog("[SimpleDictation] Starting recording...")
                 speechManager.startRecording()
                 statusBarController.isRecording = speechManager.isRecording
@@ -333,10 +348,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[SimpleDictation] After startRecording, isRecording=%d", speechManager.isRecording)
             } else {
                 NSLog("[SimpleDictation] Stopping recording...")
-                lastKeyRelease = Date()
+                let now = Date()
+                let wasShortTap = now.timeIntervalSince(holdPressTime) < shortTapMax
+                lastKeyRelease = now
                 speechManager.stopRecording()
                 statusBarController.isRecording = false
                 floatingWindow?.updateAppearance(recording: false)
+                if !wasShortTap {
+                    // A real dictation: it must never inherit a pending Return.
+                    lastShortTapRelease = .distantPast
+                    speechManager.cancelPendingEnter()
+                } else if now.timeIntervalSince(lastShortTapRelease) < multiTapWindow {
+                    lastShortTapRelease = .distantPast
+                    NSLog("[SimpleDictation] Hold mode: double tap -> Return")
+                    speechManager.sendReturn()
+                } else {
+                    lastShortTapRelease = now
+                }
             }
         }
     }
@@ -371,30 +399,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         tapCount = 0
         guard let sm = speechManager, let sbc = statusBarController, sbc.isEnabled else { return }
 
-        switch count {
-        case 1:   // stop (only meaningful while listening)
-            guard sm.isRecording else { return }
-            NSLog("[SimpleDictation] Hands-free: single tap -> stop")
+        if sm.isRecording {
+            if count >= 2 {
+                NSLog("[SimpleDictation] Hands-free: double tap -> stop and Return")
+                sm.pressEnterAfterDelivery()
+            } else {
+                NSLog("[SimpleDictation] Hands-free: single tap -> stop")
+            }
             lastKeyRelease = Date()
             sm.stopRecording()
             sbc.isRecording = false
             floatingWindow?.updateAppearance(recording: false)
-        case 2:   // Return — only while listening, so a mistimed start attempt
-                  // (two taps instead of three) can't fire a stray Enter into your app.
-            guard sm.isRecording else { return }
-            NSLog("[SimpleDictation] Hands-free: double tap -> Return")
-            sm.pressEnter()
-        case 3:   // start hands-free listening
-            guard !sm.isRecording else { return }
-            NSLog("[SimpleDictation] Hands-free: triple tap -> start")
+        } else if count >= 2 {
+            NSLog("[SimpleDictation] Hands-free: double tap -> start")
+            sm.cancelPendingEnter()
             sm.startRecording()
             sbc.isRecording = sm.isRecording
             floatingWindow?.updateAppearance(recording: sm.isRecording)
-        default:
-            break
         }
     }
-    
+
     /// External trigger: another app (e.g. AAA) writes a command to the trigger
     /// file and we drive the same recording code path as the hotkey.
     func setupExternalTrigger() {

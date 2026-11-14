@@ -80,7 +80,7 @@ final class DictationSettingsStore: ObservableObject {
     /// Display-only: relabel modifier keys for a non-Mac (PC) keyboard
     /// (Option→Alt, Command→Win). The macOS-level modifier flags are identical.
     @Published var pcKeyboard: Bool { didSet { UserDefaults.standard.set(pcKeyboard, forKey: "pcKeyboardLayout") } }
-    /// "hold" (hold key to talk) or "toggle" (triple-tap start, single-tap stop, double-tap Return).
+    /// "hold" (hold key to talk) or "toggle" (double-tap start, single-tap stop, double-tap stop + Return).
     @Published var triggerMode: String { didSet { UserDefaults.standard.set(triggerMode, forKey: "triggerMode") } }
 
     // Recording indicator
@@ -112,12 +112,27 @@ final class DictationSettingsStore: ObservableObject {
     @Published var pauseMethod: String     { didSet { guard !suppress else { return }; MediaController.shared.method = MediaController.Method(rawValue: pauseMethod) ?? .pauseApps } }
     @Published var pausedApps: Set<String> { didSet { guard !suppress else { return }; MediaController.shared.apps = Array(pausedApps).sorted() } }
 
+    // Writing
+    @Published var cleanupEnabled: Bool { didSet { TextPolish.cleanupEnabled = cleanupEnabled } }
+    @Published var aiPolish: Bool       { didSet { AIPolish.enabled = aiPolish } }
+    @Published var dictionary: [DictionaryEntry] { didSet { TextPolish.entries = dictionary } }
+
     var mics: [SpeechManager.AudioDeviceInfo] { speechManager?.availableMics ?? [] }
 
     private func setMotion(_ m: DotMotion, _ on: Bool) {
         var s = DotSettings.motions
         if on { s.insert(m) } else { s.remove(m) }
         DotSettings.motions = s
+    }
+
+    /// Set by code that wants Settings to jump to a page (e.g. the license gate).
+    @Published var requestedPage: SettingPageID?
+
+    /// Change the engine shown in Settings without re-running the engine switch.
+    func setEngineSilently(_ value: String) {
+        suppress = true
+        engine = value
+        suppress = false
     }
 
     private func applyEngine() {
@@ -204,6 +219,10 @@ final class DictationSettingsStore: ObservableObject {
         pauseMediaEnabled = MediaController.shared.enabled
         pauseMethod = MediaController.shared.method.rawValue
         pausedApps = Set(MediaController.shared.apps)
+
+        cleanupEnabled = TextPolish.cleanupEnabled
+        aiPolish = AIPolish.enabled
+        dictionary = TextPolish.entries
     }
 }
 
@@ -240,7 +259,9 @@ enum SettingPageID: String, CaseIterable, Identifiable {
     case engine, microphone, language
     case triggerMode, triggerKeys
     case indicator, captions
+    case cleanup, dictionary
     case incremental, clipboard, media
+    case license
 
     var id: String { rawValue }
 
@@ -253,9 +274,12 @@ enum SettingPageID: String, CaseIterable, Identifiable {
         case .triggerKeys:  return "Trigger keys"
         case .indicator:    return "Indicator"
         case .captions:     return "Captions"
+        case .cleanup:      return "Cleanup"
+        case .dictionary:   return "Dictionary"
         case .incremental:  return "Paste as you speak"
         case .clipboard:    return "Clipboard cycling"
         case .media:        return "Pause media"
+        case .license:      return "License"
         }
     }
 
@@ -268,9 +292,12 @@ enum SettingPageID: String, CaseIterable, Identifiable {
         case .triggerKeys:  return "keyboard"
         case .indicator:    return "circle.hexagongrid.fill"
         case .captions:     return "captions.bubble.fill"
+        case .cleanup:      return "wand.and.stars"
+        case .dictionary:   return "character.book.closed.fill"
         case .incremental:  return "text.cursor"
         case .clipboard:    return "doc.on.clipboard.fill"
         case .media:        return "speaker.slash.fill"
+        case .license:      return "key.fill"
         }
     }
 }
@@ -346,7 +373,9 @@ struct SettingsView: View {
         ("Recognition", [.engine, .microphone, .language]),
         ("Input", [.triggerMode, .triggerKeys]),
         ("Feedback", [.indicator, .captions]),
+        ("Writing", [.cleanup, .dictionary]),
         ("Extras", [.incremental, .clipboard, .media]),
+        ("Purchase", [.license]),
     ]
 
     var body: some View {
@@ -362,6 +391,9 @@ struct SettingsView: View {
         }
         .frame(width: 780, height: 560)
         .onAppear { store.speechManager?.refreshMicList() }
+        .onReceive(store.$requestedPage) { page in
+            if let page { selection = page; store.requestedPage = nil }
+        }
     }
 
     private var sidebar: some View {
@@ -461,11 +493,12 @@ struct SettingsView: View {
                         subtitle: "How you start and stop dictation.") {
                 VStack(spacing: 8) {
                     OptionCard(title: "Hold to talk",
-                               description: "Hold a trigger key while you speak, release to type. Double-tap for Return.",
+                               description: "Hold a trigger key while you speak, release to type. Tap it twice quickly for Return.",
                                selected: store.triggerMode == "hold") { store.triggerMode = "hold" }
                     OptionCard(title: "Hands-free",
-                               description: "Triple-tap a trigger key to start listening, single tap to stop, double-tap for Return.",
+                               description: "Double-tap a trigger key to start listening. Tap once to stop, or double-tap to stop and press Return.",
                                selected: store.triggerMode == "toggle") { store.triggerMode = "toggle" }
+                    if store.triggerMode == "toggle" { DictationConflictNotice() }
                 }
             }
         case .triggerKeys:
@@ -528,6 +561,60 @@ struct SettingsView: View {
                     }
                 }.frame(maxHeight: 330)
             }
+        case .cleanup:
+            SettingPage(icon: id.icon, title: "Cleanup",
+                        subtitle: "Tidy what you said before it is typed. Everything runs on your Mac.") {
+                VStack(alignment: .leading, spacing: 14) {
+                    Toggle(isOn: $store.cleanupEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Remove filler words")
+                            Text("Drops um and uh, repeated words like \"the the\", and anything before \"scratch that\". English only.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }.toggleStyle(.switch)
+                    Toggle(isOn: $store.aiPolish) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Polish with Apple Intelligence (beta)")
+                            Text(AIPolish.isAvailable
+                                 ? "Fixes punctuation and self-corrections with Apple's on-device model. Adds about a second after you finish, and does not run with Paste as you speak."
+                                 : "Needs macOS 26 or later with Apple Intelligence turned on.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }.toggleStyle(.switch).disabled(!AIPolish.isAvailable)
+                }
+            }
+        case .dictionary:
+            SettingPage(icon: id.icon, title: "Dictionary",
+                        subtitle: "Teach it your names and terms. Leave the first box empty to add a word it should simply recognize.") {
+                VStack(spacing: 8) {
+                    if store.dictionary.isEmpty {
+                        Text("No words yet. Add a name it keeps getting wrong.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    ScrollView {
+                        VStack(spacing: 6) {
+                            ForEach($store.dictionary) { $entry in
+                                HStack(spacing: 6) {
+                                    TextField("When it hears", text: $entry.heard)
+                                    Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                                    TextField("Write", text: $entry.write)
+                                    Button {
+                                        store.dictionary.removeAll { $0.id == entry.id }
+                                    } label: { Image(systemName: "minus.circle") }
+                                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                                        .help("Remove this word")
+                                }
+                                .textFieldStyle(.roundedBorder)
+                            }
+                        }
+                    }.frame(maxHeight: 230)
+                    Button {
+                        store.dictionary.append(DictionaryEntry(heard: "", write: ""))
+                    } label: { Label("Add word", systemImage: "plus") }
+                }
+            }
         case .incremental:
             SettingPage(icon: id.icon, title: "Paste as you speak",
                         subtitle: "Type words as you talk (updating every few seconds) instead of all at once when you finish. Works in either trigger mode.") {
@@ -537,6 +624,11 @@ struct SettingsView: View {
             SettingPage(icon: id.icon, title: "Clipboard cycling",
                         subtitle: "After you paste, hold ⌘ and tap V again to cycle back through earlier clipboard items.") {
                 Toggle("Enable clipboard cycling", isOn: $store.clipboardCycling).toggleStyle(.switch)
+            }
+        case .license:
+            SettingPage(icon: id.icon, title: "License",
+                        subtitle: "One payment of $4.20 unlocks every engine. No subscription.") {
+                LicensePage()
             }
         case .media:
             SettingPage(icon: id.icon, title: "Pause media",
@@ -585,6 +677,11 @@ func placeWindowOnActiveScreen(_ win: NSWindow, fallbackSize: NSSize) {
 final class SettingsWindowController {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
+
+    func show(page: SettingPageID) {
+        DictationSettingsStore.shared.requestedPage = page
+        show()
+    }
 
     func show() {
         if window == nil {

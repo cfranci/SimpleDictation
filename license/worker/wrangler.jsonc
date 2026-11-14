@@ -43,6 +43,10 @@
     // (cfranci.github.io/SimpleDictation). The native macOS app sends no Origin
     // header, so /v1/activate from the app is unaffected.
     "ALLOWED_ORIGINS": "https://cfranci.github.io,http://localhost:8788,http://127.0.0.1:8788",
-    "RATE_LIMIT_PER_MIN": "8"
+    "RATE_LIMIT_PER_MIN": "8",
+    // Purchase fulfilment (see worker.js "Stripe purchase fulfilment").
+    // plink_... id of the $4.20 Payment Link. Fulfilment stays off until this is filled.
+    "STRIPE_PAYMENT_LINK": "",
+    "DOWNLOAD_URL": "https://github.com/cfranci/SimpleDictation/releases/latest"
   }
 }
