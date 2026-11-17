@@ -1,5 +1,7 @@
 # SimpleDictation Launch Plan ($4.20, one time)
 
+> **Current status.** The ordered launch steps are [GO_LIVE.md](GO_LIVE.md). Payments are the Stripe Payment Link in `site/buy.html`, fulfilled by the Worker. Lemon Squeezy is not used. Sparkle is not shipped and this launch does not add it. The DMG is not notarized yet (`notarize-dmg.sh` is the command that does it). Price stays $4.20 once, the trial is 14 days, a key covers two Macs, and v1.3.0 users are grandfathered. The list below is the July 2026 plan. Where it disagrees with GO_LIVE.md, GO_LIVE.md wins.
+
 Built by a 45-agent armada ensemble on 2026-07-08, same playbook as the MenuBarBuddy launch the same day. This is the master doc; details live in the sibling docs (DISTRIBUTION, LICENSING-PAYMENTS, BRAND-COPY, ASSETS-RUNBOOK, SYNTHESIS).
 
 ## The decision: direct web download. No Mac App Store. Ever.
@@ -19,9 +21,9 @@ The current DMG is free and public on GitHub Releases, and people use it daily. 
 
 ## The stack
 
-- Payments: Lemon Squeezy at exactly $4.20 (merchant of record, absorbs VAT, license API), nets about $3.49.
-- Delivery: Developer-ID-signed, notarized, stapled DMG on GitHub Releases. The current build.sh/build-dmg.sh do ZERO signing today (ad-hoc identity "-", hardened runtime off), so this is the #1 pre-ship engineering task.
-- Updates: Sparkle 2 with an EdDSA-signed appcast (net-new, no Sparkle today).
+- Payments: Stripe Payment Link at exactly $4.20, one time. The Worker mints the key. See GO_LIVE.md. (The July plan below this file's status note said Lemon Squeezy. That was not what shipped.)
+- Delivery: Developer-ID-signed, notarized, stapled DMG on GitHub Releases. `notarize-dmg.sh` does that signing. `build-dmg.sh` is still ad-hoc. The published DMG is not notarized until GO_LIVE.md step 4 is run.
+- Updates: no Sparkle. Buyers download a new DMG. Do not add Sparkle for this launch.
 - Licensing: offline-first Ed25519 token minted by a free Cloudflare Worker, stored in plain UserDefaults (no bundle-ID churn here, unlike MenuBarBuddy), verified locally on launch, fail-open. Gate only the paid engines and power features; Apple Speech, the hotkey, floating mic, and Enter stay ungated.
 - Repo: stays PUBLIC, add a PolyForm Noncommercial 1.0.0 LICENSE (there is none today, so "open source" is not yet legally true). "Build it yourself" becomes the honest free tier.
 - Site: site/index.html (single file). Target: GitHub Pages at https://cfranci.github.io/SimpleDictation, or the custom domain simpledictation.app if you register it.
@@ -34,19 +36,12 @@ The current DMG is free and public on GitHub Releases, and people use it daily. 
 
 ## Go-live checklist (in order)
 
-1. Apple Developer Program ($99/yr). Developer ID cert, notarytool creds. Add a release.sh that signs with Developer ID, flips hardened runtime ON, notarizes, staples. Keep ad-hoc in project.yml for local dev. First real notarytool submit is the only way to confirm WhisperKit's downloaded Core ML weights do not trip library validation (add the disable-library-validation entitlement if they do).
-2. Commit a PolyForm Noncommercial LICENSE.
-3. Build v2.0.0: bump MARKETING_VERSION, add Sparkle 2 as an SPM dep, bake the Ed25519 license public key and Sparkle keys via INFOPLIST_KEY_*.
-4. Lemon Squeezy product at $4.20, 3 activations, no expiry. Cloudflare Worker /activate + /deactivate. Fill {BUY_URL}.
-5. LicenseManager.swift + NSAlert activation UI (this app is AppKit, no SwiftUI) + "Buy SimpleDictation / Enter License" menu items. Add the local grandfather heuristic.
-6. Pick the support inbox. Fill {SUPPORT_EMAIL}. Register simpledictation.app if you want it.
-7. GitHub Pages on for /site, verify og.png renders in link previews.
-8. Release v2.0.0 + Product Hunt + Show HN (lead with the four-blocker sandbox story and 100 percent on-device privacy) + r/macapps. Message every channel the same way: v1.3.0 is free forever, v2 is the maintained one at $4.20, or build it yourself.
+Use [GO_LIVE.md](GO_LIVE.md). Do not follow the July checklist that used to live here (Lemon Squeezy, Sparkle, a v2.0.0 version bump, three activation seats). The shipped product is version 1.4.0, Stripe, two Macs, a 14-day trial, and no auto-updater.
 
 ## Open questions for Ga'noh
 
 - Trial in the UI: no advertised trial (recommended, protects the "always free" story) vs a 14-day countdown in the menu. The degrade-to-free-tier enforcement code is harmless either way; this is only about whether to show a countdown.
-- Confirm exactly $4.20 is selectable in Lemon Squeezy and its live fee on a $4.20 sale before copy hard-commits.
+- Confirm the live Stripe Payment Link is $4.20 one time (GO_LIVE.md). Lemon Squeezy is not the provider.
 - License storage and the 3-activation seat cap: worth standing up the Cloudflare Worker for a $4.20 app, or ship honor-system offline keys only?
 - Register simpledictation.app (about $15/yr) or stay on cfranci.github.io? The license Worker and OG copy assume the custom domain.
 - Fix README step 4 ("gets typed out") to "gets pasted" so every surface agrees with the code before more copy derives from it.

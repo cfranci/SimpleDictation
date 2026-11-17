@@ -98,7 +98,9 @@
 <script>
 (function () {
   var API = "https://simpledictation-licenses.api-king.workers.dev";
-  var session = new URLSearchParams(location.search).get("session") || "";
+  // Stripe Payment Links append ?session_id=cs_... on the after-payment redirect.
+  var params = new URLSearchParams(location.search);
+  var session = params.get("session_id") || params.get("session") || "";
   var $ = function (id) { return document.getElementById(id); };
   var tries = 0;
   function giveUp() {

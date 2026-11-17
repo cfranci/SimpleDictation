@@ -4,9 +4,11 @@ A macOS menu bar app that turns your voice into text. Hold a key, talk, release,
 
 ## Download
 
-**[Download SimpleDictation-1.3.0.dmg](https://github.com/cfranci/SimpleDictation/releases/latest)** -- open the DMG and drag SimpleDictation to your Applications folder. No dependencies required.
-
 Requires macOS 14.0 or later.
+
+**[v1.3.0](https://github.com/cfranci/SimpleDictation/releases/tag/v1.3.0)** is the last fully free release ([DMG](https://github.com/cfranci/SimpleDictation/releases/download/v1.3.0/SimpleDictation-1.3.0.dmg)). It is not a trial and it is not notarized, so macOS warns the first time you open it. It stays available.
+
+**1.4.0** is the maintained build. Every engine works for 14 days, then Apple Speech stays free and $4.20 once (Stripe) unlocks Whisper, Moonshine, and Whistle on two Macs. A Mac that already used v1.3.0 stays unlocked. The notarized 1.4.0 DMG is not published yet. Until [docs/GO_LIVE.md](docs/GO_LIVE.md) is done, build from source or keep using v1.3.0. Updates are new DMG downloads. There is no in-app auto-updater.
 
 ## How It Works
 
@@ -23,8 +25,8 @@ There's also a floating mic button on screen you can click instead of using the 
 
 ### Option 1: Download the DMG (recommended)
 
-1. Go to [Releases](https://github.com/cfranci/SimpleDictation/releases/latest)
-2. Download `SimpleDictation-1.3.0.dmg`
+1. Go to [Releases](https://github.com/cfranci/SimpleDictation/releases/tag/v1.3.0) for the free build, or use the 1.4.0 DMG once it is published
+2. Download the DMG
 3. Open the DMG and drag SimpleDictation to Applications
 4. Launch from Applications
 
@@ -60,8 +62,9 @@ The app comes with multiple speech-to-text engines. You can switch between them 
 
 | Engine | Download Size | Speed | Accuracy | Notes |
 |--------|--------------|-------|----------|-------|
-| Apple Speech | Nothing to download | Instant | Good | Uses built-in macOS dictation |
-| Whisper Tiny | ~40 MB | ~1s | Fair | Fastest local model |
+| Apple Speech | Nothing to download | Instant | Good | Uses built-in macOS dictation. Stays free after the trial |
+| Whistle | Bundled (17 MB) | ~1s | Fair | On-device, no download. Premium after the 14-day trial |
+| Whisper Tiny | ~40 MB | ~1s | Fair | Fastest local Whisper |
 | Whisper Base | ~140 MB | ~2s | Good | Good balance |
 | Whisper Small | ~460 MB | ~4s | Better | Recommended for most people |
 | Whisper Medium | ~1.5 GB | ~7s | Great | Best for long-form |
@@ -96,11 +99,11 @@ SimpleDictation also includes clipboard history. The last 10 things you copied a
 ## Features
 
 - **Hold-to-talk** dictation with automatic paste
-- **10 speech engines** from instant to high-accuracy
+- **11 speech engines** from instant to high-accuracy (Apple Speech, Whistle, eight Whisper variants, Moonshine)
 - **Floating mic button** with recording glow, audio level ring, and resizable icon (10-50px)
 - **Clipboard history cycling** (last 10 copies, Cmd+V to cycle)
 - **Incremental mode** to see partial transcription as you speak
-- **16 languages** including English, Spanish, French, Chinese, Japanese
+- **12 languages**: English (US, UK, Australia), Spanish (Spain and Mexico), French, German, Italian, Portuguese (Brazil), Chinese (Simplified and Traditional), Japanese, Korean, Hindi, Arabic, and Russian. The menu lists those as 16 regional variants
 - **Double-tap to submit** for chat boxes and forms
 - **Auto-fallback** to Apple Speech while models download
 - **Model management** with download progress notifications
@@ -125,7 +128,7 @@ license/            The license-key backend, one subsystem:
   admin/            keys.html, the admin console to view/manage the key database.
   scripts/          gen-keys.mjs, the Ed25519 keygen + batch generator.
   keys/  dist/       Generated key material and batches. GITIGNORED, never committed.
-docs/               Planning + ops docs. See docs/README.md for the index.
+docs/               Planning + ops docs. docs/GO_LIVE.md is the launch checklist. See docs/README.md for the index.
 build.sh            Build + launch the app locally.
 build-dmg.sh        Assemble the distributable DMG.
 project.yml         XcodeGen project definition (app target = Sources/).
