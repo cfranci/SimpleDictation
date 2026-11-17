@@ -2,9 +2,11 @@
 
 # Distribution Strategy: SimpleDictation
 
+> **Current status.** Direct download still stands, and the Mac App Store is still out. Payments shipped as the Stripe Payment Link, not Lemon Squeezy. Sparkle is not in the app and is not part of this launch. The DMG is not notarized yet. v1.3.0 stays free. The paid build is version 1.4.0 ($4.20 once, 14-day trial, two Macs, v1 users grandfathered). The procedure is [GO_LIVE.md](GO_LIVE.md). The rest of this file is the July 2026 design note. Where it disagrees, GO_LIVE.md wins.
+
 ## FIRM RECOMMENDATION: DIRECT WEB DOWNLOAD ONLY
 
-Ship a Developer-ID-signed, notarized, stapled DMG on GitHub Releases, sold through a Lemon Squeezy checkout at exactly $4.20, auto-updated via Sparkle 2. Keep the repo PUBLIC and add a PolyForm Noncommercial 1.0.0 LICENSE (there is none today). Ship the paid product as a NEW major version (v2.0.0) and leave the existing free v1.3.0 up forever. Skip the Mac App Store entirely.
+Ship a Developer-ID-signed, notarized, stapled DMG on GitHub Releases, sold through the Stripe Payment Link at exactly $4.20. There is no auto-updater. Keep the repo PUBLIC. Leave the free v1.3.0 release up forever. Skip the Mac App Store entirely. The July text below this section still mentions Lemon Squeezy and Sparkle. Those are not the launch.
 
 This is not a close call, and the reason is technical and code-verified, not the price. I read the actual source. SimpleDictation's entire product is synthetic keystroke injection into other apps plus system-wide event taps, which is precisely the capability set the Mac App Store sandbox forbids. There is no "strip one feature and ship" path: remove the sandbox-blocked pieces and there is no app left.
 
@@ -67,7 +69,7 @@ The latest git tag is `v1.3.0` (verified) and its DMG is live on GitHub Releases
 - **Ship the paid product as v2.0.0**, a clean major-version cutover that signals "new product line" far more clearly than v1.4.0. The paid line is "the maintained one that gets updates, notarized so it installs clean, auto-updating, with new engines." Do NOT invent a specific gated feature to justify the bump; "maintained + notarized + auto-updates" is honest and sufficient.
 - **Feature-gate at the version boundary, never inside v1.3.0, and never degrade a v1.3.0 feature for licensed users.** Everything that shipped in v1.3.0 stays fully functional in v2 for buyers. New engines and future macOS-fix work land in the paid v2 line. Taking away what people already had generates justified backlash at any price.
 - **The free/self-built build IS the trial.** A time-limited trial on an app that was fully free yesterday reads as a takeaway. The public source makes the pitch airtight: anyone can still build any version for free. Do NOT re-impose any trial clock on users upgrading from v1.3.0.
-- **The message (identical in README, landing page, and launch posts):** "SimpleDictation has always been free and v1.3.0 always will be. v2 is the one I keep improving, notarized so it installs clean, auto-updating, with new engines. $4.20, one coffee, once, forever. Or keep the free one, no hard feelings."
+- **The message (identical in README, landing page, and launch posts):** "v1.3.0 stays free. The maintained build is $4.20 once, with a 14-day trial, and people who already used the free app stay unlocked. It does not update itself. It is not notarized until the go-live notarization step is done."
 - **Do NOT try to grandfather individual existing users with free keys.** There is no activation system or email list in v1.3.0, so you cannot verify who "existed." The clean answer is: v1.3.0 stays free, v2.0 is $4.20, build it yourself or pay.
 
 ---
@@ -198,7 +200,7 @@ The 10-engine claim is accurate and verified (README table lists Apple Speech + 
 - [ ] Verify: `codesign --verify --deep --strict`, `xcrun stapler validate`, `spctl -a -t open --context context:primary-signature SimpleDictation-2.0.0.dmg`.
 
 ### Phase 2 — Payment, updates, distribution plumbing
-- [ ] Lemon Squeezy: product at exactly $4.20 USD, one-time; License Keys on; activation limit 3 (laptop + desktop + work), no expiry. Capture API key + webhook secret (chmod 600 / Keychain). Confirm live LS fee/exact-price support.
+- [x] Payments: Stripe Payment Link at $4.20, fulfilled by the Worker. Do not create a Lemon Squeezy product. Two Macs, not three. See GO_LIVE.md to connect the live webhook.
 - [ ] Add `LicenseManager.swift` (CryptoKit Ed25519, UserDefaults key `SimpleDictation.licenseToken`, offline-first) + activation UI (AppKit NSAlert/NSPanel: "Buy SimpleDictation... / Enter License..." menu items). "Buy" opens the LS checkout in the default browser. Consider a thin Cloudflare Worker to sign the offline token if LS's key API doesn't do Ed25519 natively.
 - [ ] Host `docs/appcast.xml` on GitHub Pages; point the enclosure at the GitHub Release asset; EdDSA-sign each DMG.
 - [ ] Stand up the landing page (GitHub Pages `docs/`; custom domain e.g. simpledictation.app optional, adds credibility proportional to the price).
@@ -237,10 +239,10 @@ The 10-engine claim is accurate and verified (README table lists Apple Speech + 
 
 ## FINAL RECOMMENDATION (one line)
 
-Ship DIRECT ONLY, a Developer-ID-signed / notarized / stapled DMG on a $4.20 Lemon Squeezy checkout with Sparkle 2 auto-updates, released as a NEW v2.0.0 while the already-public v1.3.0 stays free forever (grandfather, take nothing away), repo kept PUBLIC and relicensed PolyForm Noncommercial as open-core, and skip the Mac App Store entirely, because the app's core is synthetic Cmd+V keystroke injection (`CGEvent` posting to `.cghidEventTap`) plus system-wide event taps and a cross-app trigger file, all structurally impossible in the MAS sandbox, and this app is actually EASIER to notarize than MenuBarBuddy since it never self-mutates its bundle.
+Ship DIRECT ONLY, a Developer-ID-signed / notarized / stapled DMG on the $4.20 Stripe Payment Link, with no Sparkle auto-updater, as version 1.4.0, while the already-public v1.3.0 stays free forever (grandfather, take nothing away), and skip the Mac App Store entirely, because the app's core is synthetic Cmd+V keystroke injection (`CGEvent` posting to `.cghidEventTap`) plus system-wide event taps and a cross-app trigger file, all structurally impossible in the MAS sandbox. Notarization is still a manual step (docs/GO_LIVE.md). Do not use Lemon Squeezy.
 
 ## Open questions
 - Is exactly $4.20 selectable on the US storefront under Apple's granular pricing? Does NOT change the recommendation (Blockers 1 and 2 kill MAS independent of price), but do not make a public 'MAS can't do $4.20' claim without checking.
 - Does notarization flag library validation when WhisperKit loads DOWNLOADED Core ML model weights under Hardened Runtime? WhisperKit loads model data (not arbitrary dylibs) so standard Hardened Runtime should suffice, but confirm with a real notarytool submission; if flagged, add com.apple.security.cs.disable-library-validation. Mechanical fix, resolve before launch, not a blocker.
-- Does Lemon Squeezy's license-key API support an Ed25519 offline-validation flow, or does it need a thin Cloudflare Worker to sign the token? Load-bearing for the 'no phone-home, works offline' claim central to this app's privacy pitch (owned by the licensing-payments section).
+- Lemon Squeezy is not the provider. The Worker mints the offline Ed25519 token itself. That question is closed.
 - Confirm the owner is fine leaving v1.3.0 free forever alongside the paid v2. Strong recommendation is yes (costs nothing, defuses the entire backlash risk); if the goal is to fully retire the free tier, the transition gets riskier and needs a softer message.

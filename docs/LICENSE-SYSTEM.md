@@ -95,3 +95,13 @@ From the console you can:
 4. It works offline from then on. No further network calls for licensing.
 
 Codes activate on up to `max_activations` Macs (default 2). Re-activating the same Mac is idempotent and burns no seat. Buyers reach the paid build at the Stripe link `https://buy.stripe.com/4gMdR987h9mtchK2sCg360q`. Support: chaseefrancis1@gmail.com.
+
+## Purchases
+
+A paid checkout is fulfilled by `POST /v1/stripe/webhook` on the same Worker. The endpoint URL, the two Stripe event types, and the secret names are in [GO_LIVE.md](GO_LIVE.md). The Worker never calls Stripe and never stores a Stripe API key. Lemon Squeezy is not part of this system.
+
+Local check, no secrets required:
+
+```bash
+node --test license/worker/purchase.test.mjs
+```

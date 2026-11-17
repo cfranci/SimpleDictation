@@ -28,7 +28,7 @@ You can now close the little window, and drag the .dmg file to the Trash if you 
 
 Open your **Applications** folder, find **SimpleDictation**, and **double-click** it.
 
-**You'll probably see a warning that the developer "cannot be verified" or that the app "can't be opened."** Don't worry, this is completely normal and safe. It shows up because SimpleDictation is sold directly rather than through the App Store, not because anything is wrong. Here's the one-time way around it:
+**On the v1.3.0 download you'll probably see a warning that the developer "cannot be verified" or that the app "can't be opened."** That build is not notarized. The warning is macOS reacting to that, and the steps below clear it once. A notarized build opens without this step. That build is not the file on the v1.3.0 release. Here's the one-time way around the warning:
 
 1. Click **Cancel** on the warning (not "Move to Trash").
 2. Open **System Settings** > **Privacy & Security**, then scroll down. You'll see a line saying SimpleDictation was blocked.

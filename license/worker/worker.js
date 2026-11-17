@@ -18,16 +18,19 @@
 //   POST  /admin/keys/:id/unrevoke
 //   GET   /admin/export.csv?status=&batch=
 //
-// Secrets (wrangler secret put):
+// Secrets (wrangler secret put). Names only; never commit values. See docs/GO_LIVE.md.
 //   ED25519_PRIVATE_KEY_B64  base32 of the 48-byte PKCS8 DER (exactly what gen-keys.mjs prints)
 //   ADMIN_TOKEN              long random string
 //   IP_SALT                  random, for hashing IPs
-//   STRIPE_WEBHOOK_SECRET    whsec_... signing secret of the Stripe webhook endpoint
-//   RESEND_API_KEY           to email buyers their key (ALERT_FROM must be a verified sender)
-// Vars: STRIPE_PAYMENT_LINK (plink_... of the $4.20 link; other sales on the same Stripe
-//       account are ignored), DOWNLOAD_URL (where the DMG lives).
+//   STRIPE_WEBHOOK_SECRET    whsec_... signing secret of the LIVE webhook endpoint
+//   STRIPE_PAYMENT_LINK      plink_... id of the $4.20 Payment Link (not the buy.stripe.com URL)
+//   RESEND_API_KEY           to email buyers their key
+//   ALERT_FROM               verified Resend sender. onboarding@resend.dev cannot mail buyers.
+//   ALERT_EMAIL              owner inbox for "buyer was not emailed" alerts
+// Vars: DOWNLOAD_URL (where the DMG lives), KID, SKU, ALLOWED_ORIGINS, RATE_LIMIT_PER_MIN.
 //   PUBLIC_KEY               (OPTIONAL) base32 raw 32-byte public key — ONLY to make
 //                            /v1/validate actually verify signatures. See loud note there.
+//   STRIPE_ALLOW_TEST_MODE   (OPTIONAL, must be unset in production) "1" accepts livemode:false.
 
 // ---------- Crockford base32 (MUST match gen-keys.mjs + Sources/Base32.swift) ----------
 // Alphabet excludes I L O U. Decode folds I/L->1 and O->0. U IS REJECTED (Crockford):
@@ -448,12 +451,16 @@ async function sweepRateLimits(env) {
 async function sendEmail(env, subject, text, to) {
   const recipient = to || env.ALERT_EMAIL;
   if (!env.RESEND_API_KEY || !recipient) return false; // not configured -> no-op
-  const from = env.ALERT_FROM || 'SimpleDictation <onboarding@resend.dev>';
+  // onboarding@resend.dev only delivers to the Resend account owner. Buyers need ALERT_FROM.
+  const from = String(env.ALERT_FROM || 'SimpleDictation <onboarding@resend.dev>').trim();
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ from, to: [recipient], subject, text }),
   });
+  if (!r.ok) {
+    console.error(JSON.stringify({ event: 'resend', ok: false, status: r.status }));
+  }
   return r.ok;
 }
 
@@ -503,77 +510,110 @@ function licenseEmailText(env, code) {
   ].join('\n');
 }
 
+function webhookResult(result, status, extra = {}) {
+  const line = JSON.stringify({ event: 'stripe_webhook', result, status, ...extra });
+  if (status >= 500) console.error(line);
+  else console.log(line);
+  return new Response(result, { status });
+}
+
 async function handleStripeWebhook(req, env) {
-  const plain = (text, status) => new Response(text, { status });
+  // Trim: `wrangler secret put` and dashboard pastes often keep a trailing newline,
+  // which would fail every signature or fail the plink_ comparison and drop the sale.
+  const secret = String(env.STRIPE_WEBHOOK_SECRET || '').trim();
+  const paymentLink = String(env.STRIPE_PAYMENT_LINK || '').trim();
   // 5xx on misconfiguration makes Stripe retry until it is fixed, so no sale is lost.
-  if (!env.STRIPE_WEBHOOK_SECRET || !env.STRIPE_PAYMENT_LINK) return plain('not configured', 503);
+  if (!secret || !paymentLink) return webhookResult('not configured', 503);
 
   const raw = await req.text();
-  if (!(await verifyStripeSignature(raw, req.headers.get('Stripe-Signature'), env.STRIPE_WEBHOOK_SECRET))) {
-    return plain('bad signature', 400);
+  if (!(await verifyStripeSignature(raw, req.headers.get('Stripe-Signature'), secret))) {
+    return webhookResult('bad signature', 400);
   }
   let event;
-  try { event = JSON.parse(raw); } catch { return plain('bad json', 400); }
+  try { event = JSON.parse(raw); } catch { return webhookResult('bad json', 400); }
+
+  // A test-mode endpoint pointed at this Worker must not mint real keys.
+  // Production leaves STRIPE_ALLOW_TEST_MODE unset.
+  if (event.livemode !== true && env.STRIPE_ALLOW_TEST_MODE !== '1') {
+    return webhookResult('ignored: test mode', 200);
+  }
 
   const type = event && event.type;
   if (type !== 'checkout.session.completed' && type !== 'checkout.session.async_payment_succeeded') {
-    return plain('ignored', 200);
+    return webhookResult('ignored', 200);
   }
   const session = (event.data && event.data.object) || {};
-  if (session.payment_link !== env.STRIPE_PAYMENT_LINK) return plain('ignored: other product', 200);
-  if (session.payment_status !== 'paid') return plain('ignored: unpaid', 200);
-  if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(String(session.id || ''))) return plain('bad session', 400);
+  if (session.payment_link !== paymentLink) return webhookResult('ignored: other product', 200);
+  if (session.payment_status !== 'paid') return webhookResult('ignored: unpaid', 200);
+  if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(String(session.id || ''))) return webhookResult('bad session', 400);
 
   const note = `stripe ${session.id}`;
-  const email = String((session.customer_details && session.customer_details.email) || session.customer_email || '').slice(0, 254);
+  const email = String((session.customer_details && session.customer_details.email) || session.customer_email || '').trim().slice(0, 254);
 
-  // Stripe retries and can deliver twice. One session = one key (also enforced by
-  // the unique index idx_licenses_stripe_note in schema.sql).
+  // Stripe retries and can deliver twice. One session = one key. The WHERE NOT
+  // EXISTS guard holds even if idx_licenses_stripe_note has not been applied yet;
+  // the partial unique index in schema.sql is the concurrent-insert backstop.
   const existing = await env.DB.prepare(`SELECT code FROM licenses WHERE note = ?`).bind(note).first();
-  if (existing) return plain('already fulfilled', 200);
+  let code = existing?.code || null;
 
-  let code = null;
-  for (let attempt = 0; attempt < 4 && !code; attempt++) {
-    const candidate = randomCode();
-    const canon = canonicalizeCode(candidate);
-    if (!canon) continue;
-    try {
-      await env.DB.prepare(
-        `INSERT INTO licenses (id, code, code_canon, status, batch, tier, email, max_activations, note)
-         VALUES (?, ?, ?, 'unused', 'stripe', 'paid', ?, 2, ?)`
-      ).bind(randomId(), candidate, canon, email || null, note).run();
-      code = candidate;
-    } catch (e) {
-      // A concurrent delivery won the race for this session: that is success.
-      const won = await env.DB.prepare(`SELECT code FROM licenses WHERE note = ?`).bind(note).first();
-      if (won) return plain('already fulfilled', 200);
-      // Otherwise a code collision: loop and try a new code.
+  if (!code) {
+    for (let attempt = 0; attempt < 4 && !code; attempt++) {
+      const candidate = randomCode();
+      const canon = canonicalizeCode(candidate);
+      if (!canon) continue;
+      try {
+        const inserted = await env.DB.prepare(
+          `INSERT INTO licenses (id, code, code_canon, status, batch, tier, email, max_activations, note)
+           SELECT ?, ?, ?, 'unused', 'stripe', 'paid', ?, 2, ?
+           WHERE NOT EXISTS (SELECT 1 FROM licenses WHERE note = ?)`
+        ).bind(randomId(), candidate, canon, email || null, note, note).run();
+        if ((inserted.meta?.changes ?? 0) > 0) code = candidate;
+        else {
+          const won = await env.DB.prepare(`SELECT code FROM licenses WHERE note = ?`).bind(note).first();
+          if (won) code = won.code;
+        }
+      } catch (_) {
+        // Unique index lost a race, or the candidate code collided. A row for this
+        // session is success; otherwise loop and try a new code.
+        const won = await env.DB.prepare(`SELECT code FROM licenses WHERE note = ?`).bind(note).first();
+        if (won) code = won.code;
+      }
     }
   }
-  if (!code) return plain('could not mint a key', 500); // Stripe retries
+  if (!code) return webhookResult('could not mint a key', 500);
 
   let emailed = false;
   if (email) {
     try { emailed = await sendEmail(env, 'Your SimpleDictation license key', licenseEmailText(env, code), email); }
     catch { emailed = false; }
   }
-  if (!emailed) {
-    // The buyer still sees the key on the thank-you page. Tell the owner to follow up.
+  if (emailed) return webhookResult('fulfilled', 200, { emailed: true });
+
+  // First sight of this sale: tell the owner once. Retries must not send another alert.
+  if (!existing) {
     try {
       await sendEmail(env, 'SimpleDictation: a buyer was not emailed their key',
         `Checkout ${session.id} minted a key but the email did not send. Buyer: ${email || '(no email on the session)'}. Look the key up in the admin page (batch "stripe").`);
     } catch { /* best effort */ }
   }
-  return plain(emailed ? 'fulfilled' : 'fulfilled, email failed', 200);
+  // No address on the session: retrying cannot grow an inbox. The thank-you page
+  // still shows the key to anyone holding the session id.
+  if (!email) return webhookResult('fulfilled, no email on session', 200, { emailed: false });
+  // Transient Resend failure, or ALERT_FROM still on the Resend sandbox sender.
+  // 500 makes Stripe retry. The row already exists, so the retry resends this same key.
+  return webhookResult('fulfilled, email failed', 500, { emailed: false });
 }
 
-// The thank-you page polls this with the checkout session id Stripe puts in the
-// redirect URL. The id is long and random, so knowing it is the proof of purchase.
+// The thank-you page polls this with the checkout session id. Stripe's Payment
+// Link redirect appends session_id=cs_...; the page sends that here as ?session=.
+// The id is long and random, so knowing it is the proof of purchase.
 async function handleOrder(req, env, url, cors) {
-  const session = url.searchParams.get('session') || '';
+  const session = url.searchParams.get('session') || url.searchParams.get('session_id') || '';
   if (!/^cs_[A-Za-z0-9_]{10,200}$/.test(session)) return json({ error: 'bad_session' }, 400, cors);
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-  if (!(await rateLimit(env, `order:${ip}`, 40))) return json({ error: 'rate_limited' }, 429, cors);
+  try {
+    if (!(await rateLimit(env, `order:${ip}`, 40))) return json({ error: 'rate_limited' }, 429, cors);
+  } catch (_) { /* a limiter hiccup must not hide a paid key */ }
   const row = await env.DB.prepare(`SELECT code FROM licenses WHERE note = ?`).bind(`stripe ${session}`).first();
   if (!row) return json({ pending: true }, 404, cors);
   return json({ code: row.code, download: env.DOWNLOAD_URL || null }, 200, cors, { 'Cache-Control': 'no-store' });
@@ -611,6 +651,8 @@ async function runScheduled(event, env) {
   if ((event.cron || '') === '0 13 * * *') await dailyDigest(env);  // 09:00 ET digest
   else await lowKeyAlert(env);                            // hourly: low-inventory alert
 }
+
+export { base32Decode, verifyStripeSignature };
 
 export default {
   async scheduled(event, env, ctx) {
