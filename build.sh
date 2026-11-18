@@ -7,6 +7,16 @@ set -o pipefail
 
 cd "$(dirname "$0")"
 
+# Vendor/Needle/libneedle.a is stored in Git LFS. If git-lfs wasn't installed when
+# the repo was cloned, the file is a small text pointer and the link step fails
+# with "unknown file type". Catch that early with a clear message.
+NEEDLE_LIB="Vendor/Needle/libneedle.a"
+if [ -f "$NEEDLE_LIB" ] && head -c 100 "$NEEDLE_LIB" | grep -q "git-lfs.github.com/spec"; then
+  echo "ERROR: $NEEDLE_LIB is a Git LFS pointer, not the real library."
+  echo "       Install Git LFS and fetch it:  brew install git-lfs && git lfs install && git lfs pull"
+  exit 1
+fi
+
 echo "==> Generating Xcode project..."
 xcodegen generate 2>/dev/null || echo "   (xcodegen not installed; using existing .xcodeproj)"
 
