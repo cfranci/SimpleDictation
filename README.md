@@ -30,7 +30,9 @@ There's also a floating mic button on screen you can click instead of using the 
 
 ### Option 2: Build from source
 
-Requires [Homebrew](https://brew.sh), [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`), and Xcode Command Line Tools (`xcode-select --install`).
+Requires [Homebrew](https://brew.sh), [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`), [Git LFS](https://git-lfs.com) (`brew install git-lfs && git lfs install`), and Xcode Command Line Tools (`xcode-select --install`).
+
+The vendored Whistle engine library (`Vendor/Needle/libneedle.a`) and the `*.cact` model files are stored with Git LFS. Install Git LFS **before** cloning, or run `git lfs pull` inside an existing clone. Without it the build fails with `ld: unknown file type in 'Vendor/Needle/libneedle.a'`.
 
 ```bash
 git clone https://github.com/cfranci/SimpleDictation.git
