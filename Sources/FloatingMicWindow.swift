@@ -360,7 +360,7 @@ class MicPillView: NSView {
             NSColor(white: 0.15, alpha: 0.35).setFill()
             path.fill()
         } else {
-            let bgAlpha: CGFloat = isHovering ? 0.45 : 0.25
+            let bgAlpha: CGFloat = min(1, DotSettings.idleOpacity + (isHovering ? 0.2 : 0))
             NSColor(white: 0.15, alpha: bgAlpha).setFill()
             path.fill()
         }

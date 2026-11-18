@@ -88,6 +88,7 @@ final class DictationSettingsStore: ObservableObject {
     @Published var dotSpeed: DotSpeed { didSet { DotSettings.speed = dotSpeed } }
     @Published var customHue: Double  { didSet { DotSettings.customHue = CGFloat(customHue) } }
     @Published var dotOpacity: Double { didSet { DotSettings.opacity = CGFloat(dotOpacity) } }
+    @Published var idleOpacity: Double { didSet { DotSettings.idleOpacity = CGFloat(idleOpacity) } }
     @Published var motionWave: Bool    { didSet { setMotion(.wave, motionWave) } }
     @Published var motionSpin: Bool    { didSet { setMotion(.spin, motionSpin) } }
     @Published var motionRipple: Bool  { didSet { setMotion(.ripple, motionRipple) } }
@@ -197,6 +198,7 @@ final class DictationSettingsStore: ObservableObject {
         dotSpeed = DotSettings.speed
         customHue = Double(DotSettings.customHue)
         dotOpacity = Double(DotSettings.opacity)
+        idleOpacity = Double(DotSettings.idleOpacity)
         let motions = DotSettings.motions
         motionWave = motions.contains(.wave)
         motionSpin = motions.contains(.spin)
@@ -524,7 +526,8 @@ struct SettingsView: View {
                         if store.dotStyle == .custom {
                             HStack { Text("Hue"); Slider(value: $store.customHue, in: 0...1) }
                         }
-                        HStack { Text("Opacity \(Int(store.dotOpacity * 100))%"); Slider(value: $store.dotOpacity, in: 0.2...1) }
+                        HStack { Text("While recording \(Int(store.dotOpacity * 100))%"); Slider(value: $store.dotOpacity, in: 0.2...1) }
+                        HStack { Text("When idle \(Int(store.idleOpacity * 100))%"); Slider(value: $store.idleOpacity, in: 0...1) }
                         HStack { Text("Size \(Int(store.iconSize))px"); Slider(value: $store.iconSize, in: 24...80, step: 2) }
                         HStack(spacing: 14) {
                             Toggle("Wave", isOn: $store.motionWave)
