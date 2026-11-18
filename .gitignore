@@ -22,3 +22,7 @@ tools/icon.html
 tools/icon.svg
 tools/icon_1024.png
 tools/AppIcon.iconset/
+
+# Icon generator output (keep the tools/make_*.swift scripts, drop their renders)
+AppIcon.iconset/
+tools/icon-variants/

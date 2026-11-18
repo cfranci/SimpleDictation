@@ -6,7 +6,8 @@
 <title>SimpleDictation, hold to talk, the words appear. On-device voice to text for Mac.</title>
 <meta name="description" content="Hold a key, talk, release, and your words appear wherever your cursor is. 100 percent on-device, works offline, your voice never leaves your Mac. $4.20 once, not $15 a month.">
 <link rel="canonical" href="https://cfranci.github.io/SimpleDictation">
-<meta name="theme-color" content="#DDDAD3">
+<meta name="theme-color" content="#DDDAD3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141312" media="(prefers-color-scheme: dark)">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -46,12 +47,18 @@
     --accent-2:#FF4A12;
     --accent-t:#B8370A;
     --accent-glow:rgba(255,74,18,.35);
+    --accent-shadow:#B8370A;
+    --key-top:#FBFAF6; --key-bottom:#E3E0D7; --key-side:#A39F94; --key-dot:#B9B5AB;
+    --field:#F7F6F2; --nav-bg:rgba(221,218,211,.82); --hover-tint:rgba(0,0,0,.05); --hover-soft:rgba(0,0,0,.035);
+    --on-accent:#151515;
+    --slab:#151515; --slab-ink:#F2F0EA; --slab-muted:#B9B5AB; --slab-faint:#8F8B82; --slab-line:#55524C;
     --good:#1F8A57;
     --bad:#C8372D;
     --radius:8px;
     --maxw:1120px;
     --mono:"IBM Plex Mono","SF Mono",ui-monospace,Menlo,Consolas,monospace;
     --shadow:0 24px 50px -28px rgba(0,0,0,.4);
+    color-scheme:light;
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
@@ -91,15 +98,15 @@
     will-change:transform;
   }
   .btn-primary{
-    color:var(--ink);
+    color:var(--on-accent);
     background:var(--accent);
-    box-shadow:0 4px 0 var(--accent-t);
+    box-shadow:0 4px 0 var(--accent-shadow);
   }
   /* buttons press like keys */
-  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 5px 0 var(--accent-t)}
-  .btn-primary:active{transform:translateY(4px);box-shadow:0 0 0 var(--accent-t)}
+  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 5px 0 var(--accent-shadow)}
+  .btn-primary:active{transform:translateY(4px);box-shadow:0 0 0 var(--accent-shadow)}
   .btn-ghost{color:var(--ink);background:transparent;border-color:var(--line-2)}
-  .btn-ghost:hover{background:rgba(0,0,0,.05);border-color:var(--ink)}
+  .btn-ghost:hover{background:var(--hover-tint);border-color:var(--ink)}
   a:focus-visible,summary:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:4px}
   .price-note{color:var(--muted-2);font-size:.86rem}
 
@@ -107,7 +114,7 @@
   header.nav{
     position:sticky;top:0;z-index:50;
     backdrop-filter:saturate(160%) blur(14px);
-    background:rgba(221,218,211,.82);
+    background:var(--nav-bg);
     border-bottom:1px solid var(--line);
   }
   .nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
@@ -148,7 +155,7 @@
   .chatline{color:var(--muted-2);font-size:.9rem;margin:2px 0 16px}
   .chatbox{
     display:flex;align-items:center;gap:10px;
-    background:#F7F6F2;border:1px solid var(--line-2);border-radius:6px;
+    background:var(--field);border:1px solid var(--line-2);border-radius:6px;
     padding:15px 16px;min-height:56px;
   }
   .chatbox .field{flex:1;font-size:1.02rem;color:var(--ink);min-height:1.4em;word-break:break-word}
@@ -174,14 +181,14 @@
   }
   .key{
     position:relative;width:108px;height:108px;border-radius:14px;margin-bottom:10px;
-    background:linear-gradient(180deg,#FBFAF6,#E3E0D7);
-    box-shadow:0 9px 0 #A39F94,0 20px 24px -8px rgba(0,0,0,.4);
+    background:linear-gradient(180deg,var(--key-top),var(--key-bottom));
+    box-shadow:0 9px 0 var(--key-side),0 20px 24px -8px rgba(0,0,0,.4);
     transition:transform .12s ease,box-shadow .12s ease;
   }
   .key span{position:absolute;left:13px;bottom:10px;font:600 15px var(--mono)}
   .key svg{position:absolute;right:11px;top:11px;width:22px;height:22px;color:var(--ink)}
-  .key i{position:absolute;left:13px;top:14px;width:8px;height:8px;border-radius:50%;background:#B9B5AB;transition:background .12s ease,box-shadow .12s ease}
-  .stage.recording .key{transform:translateY(7px);box-shadow:0 2px 0 #A39F94,0 6px 10px -6px rgba(0,0,0,.4)}
+  .key i{position:absolute;left:13px;top:14px;width:8px;height:8px;border-radius:50%;background:var(--key-dot);transition:background .12s ease,box-shadow .12s ease}
+  .stage.recording .key{transform:translateY(7px);box-shadow:0 2px 0 var(--key-side),0 6px 10px -6px rgba(0,0,0,.4)}
   .stage.recording .key i{background:var(--accent);box-shadow:0 0 10px var(--accent)}
 
   /* soundwave */
@@ -205,7 +212,7 @@
   .kbd-hint{color:var(--muted-2);font-size:.82rem;text-align:center;min-height:1.2em}
   .kbd{
     display:inline-block;padding:2px 8px;border-radius:7px;font-size:.78rem;font-weight:600;font-family:var(--mono);
-    background:#F7F6F2;border:1px solid var(--line-2);color:var(--ink);
+    background:var(--field);border:1px solid var(--line-2);color:var(--ink);
     box-shadow:0 2px 0 var(--line);
   }
 
@@ -261,7 +268,7 @@
   .engines-table td{padding:13px 14px;border-bottom:1px solid var(--line);color:var(--muted)}
   .engines-table td:first-child{color:var(--ink);font-weight:550}
   .engines-table tr:last-child td{border-bottom:none}
-  .engines-table tr:hover td{background:rgba(0,0,0,.035)}
+  .engines-table tr:hover td{background:var(--hover-soft)}
   .badge-default{
     font-size:.68rem;background:rgba(255,90,44,.15);color:var(--accent-t);
     border:1px solid rgba(255,90,44,.24);border-radius:5px;padding:2px 7px;margin-left:7px;
@@ -356,14 +363,14 @@
   /* final CTA */
   .final{
     text-align:center;
-    background:var(--ink);color:#F2F0EA;
+    background:var(--slab);color:var(--slab-ink);
     border-radius:10px;padding:clamp(40px,6vw,72px) 24px;
   }
   .final h2{margin-bottom:12px}
-  .final .lead{margin:0 auto;color:#B9B5AB}
-  .final .eyebrow{color:#F2F0EA}
-  .final .price-note{color:#8F8B82}
-  .final .btn-ghost{color:#F2F0EA;border-color:#55524C}
+  .final .lead{margin:0 auto;color:var(--slab-muted)}
+  .final .eyebrow{color:var(--slab-ink)}
+  .final .price-note{color:var(--slab-faint)}
+  .final .btn-ghost{color:var(--slab-ink);border-color:var(--slab-line)}
   .final .btn-ghost:hover{background:rgba(255,255,255,.08);border-color:#F2F0EA}
 
   /* footer */
@@ -379,6 +386,22 @@
     html{scroll-behavior:auto}
     *,*::before,*::after{animation-duration:0.001ms !important;animation-iteration-count:1 !important;transition-duration:0.001ms !important}
     .caret{animation:none;opacity:1}
+  }
+
+  /* DARK: follows the system appearance. Same keycap look, inverted surfaces. */
+  @media (prefers-color-scheme:dark){
+    :root{
+      color-scheme:dark;
+      --bg:#141312; --bg-2:#1B1A18; --card:#1F1E1B; --card-2:#262420;
+      --line:#34312C; --line-2:#4A463F;
+      --ink:#F2F0EA; --muted:#B9B5AB; --muted-2:#8F8B82;
+      --accent-t:#FF7A4D; --accent-shadow:#8E2A0A; --accent-glow:rgba(255,74,18,.45);
+      --good:#43D6A0; --bad:#F0655A; --shadow:0 24px 50px -28px rgba(0,0,0,.9);
+      --key-top:#3A3834; --key-bottom:#2A2825; --key-side:#0B0A09; --key-dot:#55524C;
+      --field:#22211E; --nav-bg:rgba(20,19,18,.82); --hover-tint:rgba(255,255,255,.06); --hover-soft:rgba(255,255,255,.04);
+      --on-accent:#151515;
+      --slab:#0B0A09; --slab-ink:#F2F0EA; --slab-muted:#B9B5AB; --slab-faint:#8F8B82; --slab-line:#3A3733;
+    }
   }
 </style>
 </head>

@@ -202,6 +202,15 @@ enum DotSettings {
         }
         set { UserDefaults.standard.set(Double(newValue), forKey: "dotOpacity") }
     }
+    /// Translucence of the idle button (not recording), 0 (invisible) … 1 (solid).
+    /// Hovering adds a little so the button is easy to find.
+    static var idleOpacity: CGFloat {
+        get {
+            let v = UserDefaults.standard.object(forKey: "dotIdleOpacity") as? Double
+            return CGFloat(v ?? 0.25)
+        }
+        set { UserDefaults.standard.set(Double(newValue), forKey: "dotIdleOpacity") }
+    }
     /// Whether to draw the microphone glyph on the floating button.
     static var showMicSymbol: Bool {
         get { UserDefaults.standard.object(forKey: "showMicSymbol") as? Bool ?? true }

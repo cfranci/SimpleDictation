@@ -13,6 +13,7 @@
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
     --bg:#DDDAD3; --card:#EDEBE5; --line:#C4C0B6; --ink:#151515; --muted:#55524C; --muted-2:#77736A;
+    --field:#FBFAF6; --on-ink:#F4F2EC; color-scheme:light;
     --accent:#FF4A12; --accent-t:#B8370A; --good:#1F8A57;
     --mono:"IBM Plex Mono","SF Mono",ui-monospace,Menlo,Consolas,monospace;
   }
@@ -52,21 +53,28 @@
   .cta:active{transform:translateY(4px); box-shadow:0 0 0 var(--accent-t)}
   .cta:focus-visible,.copy:focus-visible,a:focus-visible{outline:3px solid var(--ink); outline-offset:3px}
   .cta svg{width:18px; height:18px}
-  .cta.ghost{background:#FBFAF6; box-shadow:0 4px 0 #A39F94}
+  .cta.ghost{background:var(--field); box-shadow:0 4px 0 #A39F94}
   .cta.ghost:hover{box-shadow:0 5px 0 #A39F94}
   .cta.ghost:active{box-shadow:0 0 0 #A39F94}
   .trust{display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:20px; color:var(--muted); font:500 11.5px var(--mono); text-transform:uppercase; letter-spacing:.06em}
   .fine{margin-top:20px; color:var(--muted); font-size:13.5px}
   .fine a{color:var(--accent-t)}
   .foot{margin-top:26px; text-align:center; color:var(--muted-2); font-size:13px; max-width:560px}
-  .keybox{display:flex; align-items:center; gap:10px; background:#FBFAF6; border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:4px 0 22px}
+  .keybox{display:flex; align-items:center; gap:10px; background:var(--field); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:4px 0 22px}
   .keybox code{flex:1; font:600 19px var(--mono); letter-spacing:.04em; word-break:break-all}
-  .copy{font:600 12px var(--mono); text-transform:uppercase; letter-spacing:.08em; padding:9px 12px; border:none; border-radius:6px; background:var(--ink); color:#F4F2EC; cursor:pointer}
+  .copy{font:600 12px var(--mono); text-transform:uppercase; letter-spacing:.08em; padding:9px 12px; border:none; border-radius:6px; background:var(--ink); color:var(--on-ink); cursor:pointer}
   ol.steps{margin:0 0 26px 20px; display:grid; gap:9px; font-size:15.5px}
   .wait{color:var(--muted); font-size:15.5px; margin-bottom:8px}
   [hidden]{display:none !important}
   @media (max-width:520px){ .head,.body{padding-left:22px; padding-right:22px} h1{font-size:28px} .price .amt{font-size:50px} }
   @media (prefers-reduced-motion:reduce){ .cta{transition:none} }
+  @media (prefers-color-scheme:dark){
+    :root{
+      color-scheme:dark;
+      --bg:#141312; --card:#1F1E1B; --line:#34312C; --ink:#F2F0EA; --muted:#B9B5AB; --muted-2:#8F8B82;
+      --field:#22211E; --on-ink:#151515; --accent-t:#B8370A;
+    }
+  }
 </style>
 </head>
 <body>
