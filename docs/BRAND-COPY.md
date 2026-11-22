@@ -1,5 +1,7 @@
 # Brand and Copy (Armada stitched output, 2026-07-08)
 
+> **Current status.** Price is still $4.20 once. The trial is 14 days (the "no trial" line below is stale). The menu is 12 languages, not 16, and 11 engines, not 10. Do not claim the DMG is notarized. Sparkle is still absent, so do not promise an in-app updater. v1.3.0 users are grandfathered. Launch steps: [GO_LIVE.md](GO_LIVE.md).
+
 > Copy rule from synthesis: say the text 'appears / gets pasted at your cursor', never 'types letter by letter' (the app delivers via one synthetic Cmd+V paste).
 
 # SimpleDictation — Brand & Copy Kit
@@ -60,12 +62,12 @@ Lead with the outcome. Ordered for a landing page or store description.
 - **Hold, talk, release.** No window to open, no "start recording" button. Hold fn (or option, your choice), say it, let go, and it appears at your cursor.
 - **Double-tap to send.** Tap the key twice and it presses Enter for you, so a dictated message just sends.
 - **Your voice never leaves your Mac.** Every engine runs on-device. No cloud, no account, no upload. It works on a plane with the Wi-Fi off.
-- **Pick your accuracy.** 10 speech engines, from instant Apple Speech to Whisper Large v3 Turbo. Start fast, upgrade to precise, all free and local.
+- **Pick your accuracy.** 11 speech engines: Apple Speech, Whistle, the Whisper family, and Moonshine. Start fast, move to precise, all local.
 - **A floating mic when you want it.** A resizable mic button that glows while it listens and shows a live audio-level ring. Click to talk if you would rather not hold a key.
 - **Clipboard history built in.** Hold Cmd and tap V again to cycle back through your last copies, in any app.
 - **No garbage from silence.** A built-in guard drops the "thank you for watching" and "you." hallucinations speech engines spit out when you pause, so you never paste noise. No competitor advertises this.
-- **16 languages.** English, Spanish, French, German, Italian, Portuguese, Chinese, Japanese, Korean, Hindi, Arabic, Russian, and more.
-- **$4.20 once. Yours forever.** No subscription, no trial-into-paywall, no seat count to manage.
+- **12 languages.** English (US, UK, Australia), Spanish (Spain and Mexico), French, German, Italian, Portuguese (Brazil), Chinese (Simplified and Traditional), Japanese, Korean, Hindi, Arabic, and Russian.
+- **$4.20 once. Yours forever.** No subscription. A new install gets 14 days of every engine, then Apple Speech stays free. One key covers two Macs. People who already used v1.3.0 stay unlocked.
 
 ---
 
@@ -163,9 +165,9 @@ Own the meme, but give it a real reason so it reads as confidence, not a gimmick
 >
 > Hold the fn key (or option, your choice), say what you want to write, and let go. The words appear right where your cursor is, whether that is a chat box, a code editor, a search bar, or an email. Double-tap the key and it presses Enter, so a dictated message just sends. There is also a floating mic button that glows while it listens and shows a live audio-level ring, for the times you would rather click than hold a key.
 >
-> What makes it different is that your voice never leaves your Mac. SimpleDictation ships with 10 speech engines and every one of them runs on-device. Apple Speech is instant and built into macOS. The Whisper family, from a 40 MB Tiny model up to Large v3 Turbo, plus the bundled Moonshine Tiny, download once and then transcribe completely offline. No cloud, no account, no subscription, and no audio ever streamed to a server. Turn off your Wi-Fi and it still works.
+> What makes it different is that your voice never leaves your Mac. SimpleDictation ships with 11 speech engines and every one of them runs on-device. Apple Speech is instant and built into macOS. Whistle and Moonshine Tiny are bundled. The Whisper family, from a 40 MB Tiny model up to Large v3 Turbo, downloads once and then transcribes completely offline. No cloud, no account, no subscription, and no audio ever streamed to a server. Turn off your Wi-Fi and it still works.
 >
-> It also remembers your recent clipboard copies (hold Cmd and tap V to cycle), supports 16 languages, and quietly filters out the "thank you for watching" style noise that speech engines invent when you pause, so you never paste garbage.
+> It also remembers your recent clipboard copies (hold Cmd and tap V to cycle), supports 12 languages, and quietly filters out the "thank you for watching" style noise that speech engines invent when you pause, so you never paste garbage.
 >
 > Competing dictation apps charge $8 to $15 every month and send your voice to their servers. SimpleDictation costs **$4.20 one time**, keeps your voice on your machine, and is yours forever.
 >

@@ -1,5 +1,7 @@
 # Licensing and Payments (Armada stitched output, 2026-07-08)
 
+> **Current status.** This file is the July design. The shipped system is [LICENSE-SYSTEM.md](LICENSE-SYSTEM.md) plus [GO_LIVE.md](GO_LIVE.md). The provider is Stripe, not Lemon Squeezy. The Worker does not call a Lemon Squeezy API. Sparkle is not shipped. A key activates two Macs, not three. The trial is 14 days. v1.3.0 users are grandfathered. The DMG is not notarized yet. `MARKETING_VERSION` is 1.4.0. Where the snippets below disagree, the Worker and `Sources/LicenseManager.swift` win.
+
 # SimpleDictation — Licensing & Payments
 
 Grounded in the real source (verified this pass). SimpleDictation is a pure-**AppKit** `NSApplicationDelegate` menu-bar agent: `NSApp.setActivationPolicy(.accessory)` at **AppDelegate.swift:219** (no Dock icon), macOS 14+, XcodeGen + two SwiftPM deps (`WhisperKit`, `Moonshine`/`MoonshineVoice` at project.yml:9-26). It is **not sandboxed** — `SimpleDictation.entitlements` is literally `<dict/>`. Its whole job depends on Accessibility: text is typed via synthetic `CGEvent` Cmd+V, Enter is a synthetic `CGEvent`, the clipboard cycler installs a low-level `CGEventTap` (`ClipboardCycler`), and an external trigger file lives at `~/Library/Application Support/SimpleDictation/trigger` (`TriggerWatcher.swift:12`). There is **no SwiftUI anywhere** and **no Settings/Preferences window** — every option is an inline `NSMenuItem` built in `StatusBarController.setupMenu()` (line 158); the menu ends with a separator at **347**, `Restart` at **349**, `Quit` at **353**. The app is **already free** — `MARKETING_VERSION: 1.3.0` (project.yml:38) ships as a public GitHub Releases DMG right now.
@@ -10,9 +12,11 @@ The licensing layer must: (a) never block the menu bar or the login-time hotkey,
 
 ---
 
-## 1. Payment provider: Lemon Squeezy
+## 1. Payment provider: Stripe (shipped). The Lemon Squeezy comparison below is historical.
 
-Same conclusion as MenuBarBuddy, and it holds for the same three reasons: exact free-form **$4.20** price, true **merchant of record** (they file EU/UK VAT + US sales tax), and a first-class **license-key API** (activate / validate / deactivate). For a solo dev selling a sub-$5 utility internationally, MoR is the entire value: the alternative is personally owing sales tax in dozens of jurisdictions on one-coffee sales.
+The live checkout is the Stripe Payment Link in `site/buy.html` at **$4.20** one time. The Worker mints the key from `checkout.session.completed`. It does not call Lemon Squeezy. The July comparison that follows is why Lemon Squeezy was considered. It is not a setup guide.
+
+Same conclusion the July draft reached for MenuBarBuddy, kept here as history: exact free-form **$4.20** price, true **merchant of record** (they file EU/UK VAT + US sales tax), and a first-class **license-key API** (activate / validate / deactivate). For a solo dev selling a sub-$5 utility internationally, MoR is the entire value: the alternative is personally owing sales tax in dozens of jurisdictions on one-coffee sales. Stripe is what shipped instead.
 
 | Requirement | Lemon Squeezy | Gumroad | Paddle | Stripe Payment Links |
 |---|---|---|---|---|
@@ -479,10 +483,10 @@ Add a `Check for Updates…` menu item near the top of `setupMenu()`. Since the 
 
 ## Summary
 
-Lemon Squeezy sells at exactly **$4.20** as merchant of record, issues keys, and links to a **notarized DMG on GitHub Releases** — which requires **replacing today's zero-codesign pipeline** (`build-dmg.sh` runs only `xattr -cr` + `hdiutil`; project.yml has `CODE_SIGN_IDENTITY:"-"`, `ENABLE_HARDENED_RUNTIME: NO`) with a real Developer ID cert + hardened runtime + `codesign --deep` + notarize + staple, the single pre-ship blocker. Keys activate once against a **$0 Cloudflare Worker** (raw-Ed25519 via WebCrypto, no jose) that embeds the LS `instance_id` and returns an **offline-verifiable signed token** stored in **plain `UserDefaults`** — the big divergence from MenuBarBuddy, whose migration-chain/Keychain reasoning does not apply (stable bundle ID); UserDefaults is additionally safer across the ad-hoc→Developer-ID identity change. Activation UI is a **pure AppKit `NSAlert`** (no SwiftUI, no Settings window, no activation-policy dance). The trial is rethought for an app **already free in the wild**: **grandfather pre-2.0 free users forever** (via keys that are actually written on use, not the `"apple"`-defaulted `dictationEngine`), add a **PolyForm NC license** so build-from-source is a real free tier, and give new users a **generous 14-day degrade-never-brick trial** that gates only the paid engines/clipboard-cycling/incremental — **gated on `sender.tag != 601`, correcting a broken `representedObject` snippet** — while Apple Speech hold-to-talk stays free forever. The self-serve **"Deactivate this Mac"** works because the token carries the LS `instance_id`, closing a gap every source attempt glossed over. Anti-abuse is deliberately light (3 server seats, fail-open, no fingerprinting) because the source is public and the price is the deterrent. Sparkle 2 (third SwiftPM dep, keys wired via `INFOPLIST_KEY_*` since the app uses `GENERATE_INFOPLIST_FILE`) keeps everyone current via an EdDSA-signed appcast on GitHub Pages, pointing at the same notarized DMG.
+Stripe sells at exactly **$4.20** once. The Worker issues the key and signs an offline Ed25519 token. There is no Lemon Squeezy call and no Sparkle updater. A key covers two Macs. New installs get a 14-day trial, then Apple Speech stays free. v1.3.0 users are grandfathered from preferences they actually wrote. The DMG is notarized only after [GO_LIVE.md](GO_LIVE.md). The numbered list above this summary is the July plan (three seats, Sparkle, Lemon Squeezy) and is not the launch.
 
 ## Open questions
-- LS activate response shape: confirm the exact JSON path for instance.id and customer_email against the current Lemon Squeezy license API before wiring the Worker (fields have shifted historically).
+- Lemon Squeezy's activate response is not used. The Worker is the source of truth. Do not wire an LS client.
 - Confirm the notarized, hardened-runtime build still triggers the Accessibility permission prompt normally with the empty <dict/> entitlements — verify on a clean Mac before the first paid release, since hardened runtime occasionally interacts with TCC prompts.
 - Decide whether to embed instance_id in the signed token (chosen here) vs. persisting it in a separate UserDefaults key — the token approach is cleaner but means the deactivate route must base32-decode and parse the token server-side, and the license_key needed for LS deactivate must be recoverable (store it in KV keyed by order at activation, or include it in the token).
 - Whether to make the repo private at v2.0 or keep it public under PolyForm NC — kept-public-with-PolyForm is recommended here (honest free tier, no Sparkle/CI disruption), but this is a business call for Ga'noh.

@@ -24,7 +24,7 @@ enum LicenseError: LocalizedError {
         case .network:           return "Could not reach the activation server. Check your connection and try again. The app keeps working in the meantime."
         case .serverRejected(let m): return m.isEmpty ? "That code was not accepted. Check for typos (codes look like SD42-XXXX-XXXX-XXXX)." : m
         case .badToken:          return "Activation could not be verified. Please try again, or email chaseefrancis1@gmail.com."
-        case .alreadyActivated:  return "That code is already used up. Each code activates once. Grab another from the thread, or buy for $4.20."
+        case .alreadyActivated:  return "That key is already active on its two Macs. Email chaseefrancis1@gmail.com if one of them is yours."
         }
     }
 }
@@ -184,8 +184,10 @@ final class LicenseManager: ObservableObject {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            struct R: Decodable { let token: String?; let email: String?; let error: String? }
-            let decoded = (try? JSONDecoder().decode(R.self, from: data)) ?? R(token: nil, email: nil, error: nil)
+            // `message` is the sentence the Worker wrote for a person. `error` is a
+            // machine code (unknown_key, bad_code). Showing the code looked like a bug.
+            struct R: Decodable { let token: String?; let email: String?; let error: String?; let message: String? }
+            let decoded = (try? JSONDecoder().decode(R.self, from: data)) ?? R(token: nil, email: nil, error: nil, message: nil)
 
             switch status {
             case 200:
@@ -199,9 +201,10 @@ final class LicenseManager: ObservableObject {
                 await MainActor.run { self.refresh() }   // @Published fires -> menu self-heals
                 return .success(())
             case 409:
+                if let message = decoded.message, !message.isEmpty { return .failure(.serverRejected(message)) }
                 return .failure(.alreadyActivated)
-            case 403, 404, 410, 422:
-                return .failure(.serverRejected(decoded.error ?? ""))
+            case 400, 403, 404, 410, 422, 429:
+                return .failure(.serverRejected(decoded.message ?? ""))
             default:
                 return .failure(.network)
             }

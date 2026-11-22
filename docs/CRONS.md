@@ -34,18 +34,13 @@ Catch a broken site, buy link, or Worker before a customer does.
 - Schedule: every 15 to 30 minutes.
 - Needs: the same Resend secret, or a monitoring service.
 
-### 3. Stripe to license delivery (P1 once paid sales matter)
-Right now a $4.20 Stripe purchase charges the card and thanks the buyer, but does not auto-send a key. The correct primary mechanism is a Stripe webhook (event-driven, not a cron). A reconciliation cron is the safety net.
-- What: poll Stripe for `checkout.session.completed` in the last hour, and for any paid session without an issued key, mint one (a `paid` batch code) and email it.
-- Where: the Worker, or a dedicated small Worker with the Stripe secret key.
-- Schedule: every 15 minutes as a backstop to the webhook, or hourly.
-- Needs: Stripe secret key as a Worker secret, and the license mint path (already in the Worker).
+### 3. Stripe to license delivery
 
-### 4. Sparkle appcast reachability (P2, once auto-update is live)
-A broken appcast silently stops every user from updating.
-- What: fetch the appcast XML and the latest DMG URL, verify 200 and that the enclosure parses.
-- Schedule: daily.
-- Needs: the appcast URL (once Sparkle ships).
+The Worker already fulfils `checkout.session.completed` and `checkout.session.async_payment_succeeded` at `POST /v1/stripe/webhook`. It does not call Stripe, and it does not need a Stripe secret key. Connecting that endpoint is a manual step in [GO_LIVE.md](GO_LIVE.md), not a cron. Do not add a poller that stores a Stripe secret key.
+
+### 4. Sparkle appcast reachability
+
+Not applicable. Sparkle is not shipped, and this launch does not add it. There is no appcast to check.
 
 ### 5. Credential expiry reminders (P2)
 - Apple Developer ID cert and notarization credentials expire annually; the API KING Cloudflare token and the Resend key can be rotated. A monthly job that checks expiry dates and reminds you avoids a surprise broken release.
